@@ -30,12 +30,34 @@ export function airwayResistance(a: Airway): number {
   return atkinsonResistance(a.frictionFactor, a.perimeter, a.length, a.area) + regulator;
 }
 
+/** Default Atkinson flow exponent: fully turbulent square law (p = R·Q²). */
+export const DEFAULT_FLOW_EXPONENT = 2;
+
 /**
- * Square-law pressure drop, signed to preserve flow direction:
+ * The Atkinson flow exponent n for an airway, clamped to the physically
+ * meaningful band [1, 2]: 1 = laminar (p ∝ Q), 2 = fully turbulent (p ∝ Q²).
+ */
+export function airwayExponent(a: Airway): number {
+  const n = a.flowExponent ?? DEFAULT_FLOW_EXPONENT;
+  if (!Number.isFinite(n)) return DEFAULT_FLOW_EXPONENT;
+  return Math.min(2, Math.max(1, n));
+}
+
+/**
+ * Signed Atkinson pressure drop for exponent n:
  *
- *   p = R · Q · |Q|
+ *   p = R · |Q|^(n-1) · Q
  *
- * so that reversing Q reverses the sign of the head loss.
+ * Reversing Q reverses the sign of the head loss. n = 2 recovers the turbulent
+ * square law R·Q·|Q|; n = 1 is the laminar linear law R·Q.
+ */
+export function pressureDrop(R: number, Q: number, n: number = DEFAULT_FLOW_EXPONENT): number {
+  return R * Math.abs(Q) ** (n - 1) * Q;
+}
+
+/**
+ * Square-law pressure drop, signed to preserve flow direction (the n = 2 case
+ * of {@link pressureDrop}): p = R · Q · |Q|.
  */
 export function squareLawDrop(R: number, Q: number): number {
   return R * Q * Math.abs(Q);

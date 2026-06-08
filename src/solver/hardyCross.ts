@@ -1,6 +1,6 @@
 import type { VentNetwork, Fan } from '../model/types';
-import { airwayResistance } from './resistance';
-import { fanPressure, fanSlope } from './fan';
+import { airwayResistance, airwayExponent, pressureDrop, DEFAULT_FLOW_EXPONENT } from './resistance';
+import { fanPressure, fanSlope, fanState, type FanState } from './fan';
 
 /**
  * Steady-state mine ventilation solver using the Hardy Cross MESH (loop) method.
@@ -51,6 +51,8 @@ export interface AirwayResult {
   pressureDrop: number;
   /** Fan pressure rise at the solved flow, Pa (0 if no fan) */
   fanPressure: number;
+  /** Operating state of this airway's fan, or undefined if there is no fan. */
+  fanState?: FanState;
   /**
    * Contaminant concentration carried by this airway (upstream node value),
    * arbitrary units. Populated only when a contaminant solve has run.
@@ -80,6 +82,8 @@ interface Branch {
   from: number; // node index
   to: number; // node index
   R: number;
+  /** Atkinson flow exponent n (p = R·|Q|^(n-1)·Q). */
+  n: number;
   fan: Fan | null;
   /** Constant pressure source in the from->to direction, Pa (boundary branches). */
   pressureSource: number;
@@ -114,6 +118,7 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
       from,
       to,
       R: airwayResistance(a),
+      n: airwayExponent(a),
       fan: a.fan ?? null,
       pressureSource: 0,
       area: a.area,
@@ -141,6 +146,7 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
         from: refIndex,
         to: i,
         R: 0,
+        n: DEFAULT_FLOW_EXPONENT, // irrelevant: R = 0, pressure comes from the source
         fan: null,
         pressureSource: n.fixedPressure as number,
         area: 0,
@@ -226,10 +232,11 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
         const b = branches[branch];
         const q = Q[branch];
         const headLoss =
-          b.R * q * Math.abs(q) - (b.fan ? fanPressure(b.fan, q) : 0) - b.pressureSource;
+          pressureDrop(b.R, q, b.n) - (b.fan ? fanPressure(b.fan, q) : 0) - b.pressureSource;
         numerator += dir * headLoss;
         const slope = b.fan ? fanSlope(b.fan, q) : 0;
-        denominator += 2 * b.R * Math.abs(q) - slope;
+        // d/dq [ R·|q|^(n-1)·q ] = n·R·|q|^(n-1)
+        denominator += b.n * b.R * Math.abs(q) ** (b.n - 1) - slope;
       }
       if (Math.abs(denominator) < DENOM_FLOOR) {
         denominator = denominator < 0 ? -DENOM_FLOOR : DENOM_FLOOR;
@@ -259,8 +266,9 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
       R: b.R,
       Q: q,
       velocity: b.area > 0 ? q / b.area : 0,
-      pressureDrop: b.R * q * Math.abs(q),
+      pressureDrop: pressureDrop(b.R, q, b.n),
       fanPressure: b.fan ? fanPressure(b.fan, q) : 0,
+      fanState: b.fan ? fanState(b.fan, q) : undefined,
     });
   }
 

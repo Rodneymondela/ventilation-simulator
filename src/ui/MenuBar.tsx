@@ -18,16 +18,18 @@ export function MenuBar() {
   const fileInput = useRef<HTMLInputElement>(null);
 
   const newModel = useNetworkStore((s) => s.newModel);
-  const loadNetwork = useNetworkStore((s) => s.loadNetwork);
+  const loadModel = useNetworkStore((s) => s.loadModel);
   const runSolve = useNetworkStore((s) => s.runSolve);
   const undo = useNetworkStore((s) => s.undo);
   const redo = useNetworkStore((s) => s.redo);
 
   const doSaveJson = () => {
-    const net = useNetworkStore.getState().activeNetwork();
-    download('ventilation-model.json', exportModelJson(net), 'application/json');
+    // Save the full pool + stage list so staging round-trips.
+    const { network, stages } = useNetworkStore.getState();
+    download('ventilation-model.json', exportModelJson(network, stages), 'application/json');
   };
   const doNetworkCsv = () => {
+    // CSV reflects the active stage (what is currently shown).
     const net = useNetworkStore.getState().activeNetwork();
     download('ventilation-network.csv', exportNetworkCsv(net), 'text/csv');
   };
@@ -46,8 +48,8 @@ export function MenuBar() {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const net = parseModelJson(String(reader.result));
-        loadNetwork(net, file.name.replace(/\.json$/i, ''));
+        const doc = parseModelJson(String(reader.result));
+        loadModel(doc.network, doc.stages);
       } catch (err) {
         alert(`Could not open model: ${err instanceof Error ? err.message : err}`);
       }

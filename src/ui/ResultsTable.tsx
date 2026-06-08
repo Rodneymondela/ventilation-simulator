@@ -1,5 +1,6 @@
 import { useNetworkStore } from '../store/networkStore';
 import { useShallow } from 'zustand/react/shallow';
+import { FAN_STATE_STYLE } from '../display/fanStyle';
 
 export function ResultsTable() {
   const { result, solveError, resultStale, contaminantConverged, setSelection, selection } =
@@ -43,6 +44,7 @@ export function ResultsTable() {
               <th className="px-3 py-1 text-right font-medium">Velocity (m/s)</th>
               <th className="px-3 py-1 text-right font-medium">Δp (Pa)</th>
               <th className="px-3 py-1 text-right font-medium">Fan (Pa)</th>
+              <th className="px-3 py-1 text-left font-medium">Fan state</th>
             </tr>
           </thead>
           <tbody>
@@ -62,14 +64,23 @@ export function ResultsTable() {
                   <td className="px-3 py-1 text-right font-mono">{r.velocity.toFixed(3)}</td>
                   <td className="px-3 py-1 text-right font-mono">{r.pressureDrop.toFixed(2)}</td>
                   <td className="px-3 py-1 text-right font-mono">
-                    {r.fanPressure !== 0 ? r.fanPressure.toFixed(2) : '—'}
+                    {r.fanState && r.fanState !== 'off' ? r.fanPressure.toFixed(2) : '—'}
+                  </td>
+                  <td className="px-3 py-1">
+                    {r.fanState ? (
+                      <span className={`font-medium ${FAN_STATE_STYLE[r.fanState].text}`}>
+                        ● {FAN_STATE_STYLE[r.fanState].label}
+                      </span>
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )}
                   </td>
                 </tr>
               );
             })}
             {!result && (
               <tr>
-                <td colSpan={6} className="px-3 py-4 text-center text-slate-400">
+                <td colSpan={7} className="px-3 py-4 text-center text-slate-400">
                   Build a network and run a solve to see per-airway results.
                 </td>
               </tr>

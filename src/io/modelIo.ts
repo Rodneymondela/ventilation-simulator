@@ -1,5 +1,11 @@
-import type { VentNetwork } from '../model/types';
+import type { VentNetwork, Stage } from '../model/types';
 import type { SolveResult } from '../solver';
+
+/** Self-contained model document: the pooled network plus its stage list. */
+export interface ModelDoc {
+  network: VentNetwork;
+  stages?: Stage[];
+}
 
 /** Trigger a browser download of `content` as `filename`. */
 export function download(filename: string, content: string, mime = 'text/plain') {
@@ -14,17 +20,23 @@ export function download(filename: string, content: string, mime = 'text/plain')
   URL.revokeObjectURL(url);
 }
 
-export function exportModelJson(network: VentNetwork): string {
-  return JSON.stringify(network, null, 2);
+/**
+ * Serialize the full pooled network plus its stage list. Each node/airway keeps
+ * its `stages` membership, so staging round-trips through save/open.
+ */
+export function exportModelJson(network: VentNetwork, stages?: Stage[]): string {
+  const doc = { nodes: network.nodes, airways: network.airways, stages: stages ?? [] };
+  return JSON.stringify(doc, null, 2);
 }
 
 /** Parse and minimally validate a model JSON string. Throws on bad shape. */
-export function parseModelJson(text: string): VentNetwork {
+export function parseModelJson(text: string): ModelDoc {
   const data = JSON.parse(text);
   if (!data || !Array.isArray(data.nodes) || !Array.isArray(data.airways)) {
     throw new Error('Not a valid model: expected { nodes: [], airways: [] }');
   }
-  return data as VentNetwork;
+  const stages = Array.isArray(data.stages) ? (data.stages as Stage[]) : undefined;
+  return { network: { nodes: data.nodes, airways: data.airways }, stages };
 }
 
 function csvRow(values: (string | number)[]): string {
@@ -59,6 +71,7 @@ export function exportNetworkCsv(network: VentNetwork): string {
       'regulatorResistance',
       'hasFan',
       'type',
+      'stages',
     ]),
     ...network.airways.map((a) =>
       csvRow([
@@ -73,6 +86,7 @@ export function exportNetworkCsv(network: VentNetwork): string {
         a.regulatorResistance ?? '',
         a.fan ? 'yes' : 'no',
         a.type ?? '',
+        (a.stages ?? []).join(' '),
       ]),
     ),
   ];

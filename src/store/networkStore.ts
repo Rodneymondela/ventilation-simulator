@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { VentNetwork, VentNode, Airway, Fan } from '../model/types';
+import type { VentNetwork, VentNode, Airway, Fan, Stage } from '../model/types';
+import { stageView, inStage, MAX_STAGES } from '../model/types';
 import { createDemoNetwork } from '../model/demoNetwork';
 import { solveNetwork, solveContaminant, type SolveResult } from '../solver';
 import type { DisplaySetting } from '../display/variables';
@@ -13,28 +14,32 @@ export type Selection =
   | { type: 'airway'; id: string }
   | null;
 
-export interface Scenario {
-  id: string;
-  name: string;
-  network: VentNetwork;
-}
-
 interface DisplayState {
   primary: DisplaySetting;
   secondary: DisplaySetting;
 }
 
+/**
+ * Persisted model document. The network is a single shared POOL; `stages` lists
+ * the named stages and each node/airway references stages via its `stages`
+ * membership. Bumped to v2 when the old independent-"scenario" model was
+ * replaced by the Ventsim shared-airway staging model.
+ */
 interface PersistShape {
-  scenarios: Scenario[];
-  activeScenarioId: string;
+  network: VentNetwork;
+  stages: Stage[];
+  activeStageId: string;
   display: DisplayState;
 }
 
-const STORAGE_KEY = 'ventsim.model.v1';
+const STORAGE_KEY = 'ventsim.model.v2';
+const LEGACY_STORAGE_KEY = 'ventsim.model.v1';
 
 interface AppState {
-  scenarios: Scenario[];
-  activeScenarioId: string;
+  /** Single shared pool of nodes + airways across all stages. */
+  network: VentNetwork;
+  stages: Stage[];
+  activeStageId: string;
   selection: Selection;
   tool: Tool;
   viewMode: ViewMode;
@@ -47,12 +52,14 @@ interface AppState {
   contaminantConverged: boolean | null;
   display: DisplayState;
 
-  // history (per active network)
+  // history (snapshots of the pooled network)
   past: VentNetwork[];
   future: VentNetwork[];
 
   // --- selectors
+  /** Filtered view of the pool for the active stage (what is shown/solved). */
   activeNetwork: () => VentNetwork;
+  activeStage: () => Stage;
 
   // --- tools / selection
   setTool: (tool: Tool) => void;
@@ -60,12 +67,13 @@ interface AppState {
   setSelection: (s: Selection) => void;
   setPendingFromNode: (id: string | null) => void;
 
-  // --- editing (history-tracked)
+  // --- editing (history-tracked, operate on the pool)
   addNode: (x: number, y: number) => void;
   addAirway: (fromId: string, toId: string) => void;
   updateNode: (id: string, patch: Partial<VentNode>) => void;
   updateAirway: (id: string, patch: Partial<Airway>) => void;
   setFan: (airwayId: string, fan: Fan | null) => void;
+  setAirwayStages: (airwayId: string, stageIds: string[]) => void;
   deleteSelected: () => void;
 
   // --- live drag (history captured at drag start)
@@ -81,13 +89,14 @@ interface AppState {
 
   // --- model lifecycle
   newModel: () => void;
-  loadNetwork: (network: VentNetwork, name?: string) => void;
+  loadModel: (network: VentNetwork, stages?: Stage[]) => void;
 
-  // --- scenarios
-  addScenario: () => void;
-  switchScenario: (id: string) => void;
-  renameScenario: (id: string, name: string) => void;
-  deleteScenario: (id: string) => void;
+  // --- stages
+  addStage: () => void;
+  duplicateStage: () => void;
+  switchStage: (id: string) => void;
+  renameStage: (id: string, name: string) => void;
+  deleteStage: (id: string) => void;
 
   // --- history
   undo: () => void;
@@ -108,16 +117,70 @@ function uniqueId(existing: Set<string>, prefix: string): string {
   return id;
 }
 
+/** Stamp every node/airway in a network with `[stageId]` membership. */
+function stampStage(network: VentNetwork, stageId: string): VentNetwork {
+  return {
+    nodes: network.nodes.map((n) => ({ ...n, stages: [stageId] })),
+    airways: network.airways.map((a) => ({ ...a, stages: [stageId] })),
+  };
+}
+
+/**
+ * Concrete stage membership of an item: its explicit list, or — if ubiquitous
+ * (undefined/empty) — all current stage ids.
+ */
+function materialize(itemStages: string[] | undefined, allStageIds: string[]): string[] {
+  return itemStages && itemStages.length > 0 ? itemStages : [...allStageIds];
+}
+
+/** Build the initial Base stage from the demo network. */
+function freshModel(network: VentNetwork): PersistShape {
+  const stage: Stage = { id: uid('st'), name: 'Base' };
+  return {
+    network: stampStage(network, stage.id),
+    stages: [stage],
+    activeStageId: stage.id,
+    display: defaultDisplay,
+  };
+}
+
 function loadPersisted(): PersistShape | null {
+  // Prefer the current v2 shape.
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as PersistShape;
-    if (!parsed.scenarios?.length) return null;
-    return parsed;
+    if (raw) {
+      const parsed = JSON.parse(raw) as PersistShape;
+      if (parsed.network?.nodes && parsed.stages?.length) return parsed;
+    }
   } catch {
-    return null;
+    /* fall through to migration / demo */
   }
+  // Migrate the legacy v1 "scenarios" shape: take the active (or first)
+  // scenario's network as the pool and wrap it in a single Base stage.
+  try {
+    const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (raw) {
+      const old = JSON.parse(raw) as {
+        scenarios?: { id: string; name: string; network: VentNetwork }[];
+        activeScenarioId?: string;
+        display?: DisplayState;
+      };
+      const sc =
+        old.scenarios?.find((s) => s.id === old.activeScenarioId) ?? old.scenarios?.[0];
+      if (sc?.network?.nodes) {
+        const stage: Stage = { id: uid('st'), name: sc.name || 'Base' };
+        return {
+          network: stampStage(sc.network, stage.id),
+          stages: [stage],
+          activeStageId: stage.id,
+          display: old.display ?? defaultDisplay,
+        };
+      }
+    }
+  } catch {
+    /* fall through to demo */
+  }
+  return null;
 }
 
 const defaultDisplay: DisplayState = {
@@ -126,38 +189,25 @@ const defaultDisplay: DisplayState = {
 };
 
 function initialState(): PersistShape {
-  const persisted = loadPersisted();
-  if (persisted) return persisted;
-  const scenario: Scenario = { id: uid('sc'), name: 'Base', network: createDemoNetwork() };
-  return { scenarios: [scenario], activeScenarioId: scenario.id, display: defaultDisplay };
+  return loadPersisted() ?? freshModel(createDemoNetwork());
 }
 
 export const useNetworkStore = create<AppState>((set, get) => {
   const init = initialState();
 
-  /** Replace the active network with `next`, recording history. */
+  /** Replace the pooled network with `next`, recording history. */
   function commit(next: VentNetwork) {
-    const { scenarios, activeScenarioId, past } = get();
-    const current = scenarios.find((s) => s.id === activeScenarioId)!.network;
     set({
-      past: [...past, clone(current)],
+      past: [...get().past, clone(get().network)],
       future: [],
-      scenarios: scenarios.map((s) =>
-        s.id === activeScenarioId ? { ...s, network: next } : s,
-      ),
+      network: next,
       resultStale: true,
     });
   }
 
-  /** Replace the active network WITHOUT recording history (live drag). */
-  function setActiveNetwork(next: VentNetwork) {
-    const { scenarios, activeScenarioId } = get();
-    set({
-      scenarios: scenarios.map((s) =>
-        s.id === activeScenarioId ? { ...s, network: next } : s,
-      ),
-      resultStale: true,
-    });
+  /** Replace the pooled network WITHOUT recording history (live drag). */
+  function setPool(next: VentNetwork) {
+    set({ network: next, resultStale: true });
   }
 
   return {
@@ -173,9 +223,10 @@ export const useNetworkStore = create<AppState>((set, get) => {
     past: [],
     future: [],
 
-    activeNetwork: () => {
-      const { scenarios, activeScenarioId } = get();
-      return scenarios.find((s) => s.id === activeScenarioId)!.network;
+    activeNetwork: () => stageView(get().network, get().activeStageId),
+    activeStage: () => {
+      const { stages, activeStageId } = get();
+      return stages.find((s) => s.id === activeStageId) ?? stages[0];
     },
 
     setTool: (tool) => set({ tool, pendingFromNode: null }),
@@ -184,18 +235,18 @@ export const useNetworkStore = create<AppState>((set, get) => {
     setPendingFromNode: (id) => set({ pendingFromNode: id }),
 
     addNode: (x, y) => {
-      const net = get().activeNetwork();
-      const ids = new Set(net.nodes.map((n) => n.id));
+      const { network, activeStageId } = get();
+      const ids = new Set(network.nodes.map((n) => n.id));
       const id = uniqueId(ids, 'N');
-      const node: VentNode = { id, label: id, x, y, z: 0 };
-      commit({ ...net, nodes: [...net.nodes, node] });
+      const node: VentNode = { id, label: id, x, y, z: 0, stages: [activeStageId] };
+      commit({ ...network, nodes: [...network.nodes, node] });
       set({ selection: { type: 'node', id } });
     },
 
     addAirway: (fromId, toId) => {
       if (fromId === toId) return;
-      const net = get().activeNetwork();
-      const ids = new Set(net.airways.map((a) => a.id));
+      const { network, activeStageId } = get();
+      const ids = new Set(network.airways.map((a) => a.id));
       const id = uniqueId(ids, 'A');
       const airway: Airway = {
         id,
@@ -207,63 +258,85 @@ export const useNetworkStore = create<AppState>((set, get) => {
         perimeter: 12,
         frictionFactor: 0.012, // PLACEHOLDER — verify against a primary source
         type: 'airway',
+        stages: [activeStageId],
       };
-      commit({ ...net, airways: [...net.airways, airway] });
+      commit({ ...network, airways: [...network.airways, airway] });
       set({ selection: { type: 'airway', id }, pendingFromNode: null });
     },
 
     updateNode: (id, patch) => {
-      const net = get().activeNetwork();
+      const { network } = get();
       commit({
-        ...net,
-        nodes: net.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)),
+        ...network,
+        nodes: network.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)),
       });
     },
 
+    // Edits a pooled airway by id → reflected in EVERY stage it belongs to.
     updateAirway: (id, patch) => {
-      const net = get().activeNetwork();
+      const { network } = get();
       commit({
-        ...net,
-        airways: net.airways.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+        ...network,
+        airways: network.airways.map((a) => (a.id === id ? { ...a, ...patch } : a)),
       });
     },
 
     setFan: (airwayId, fan) => {
-      const net = get().activeNetwork();
+      const { network } = get();
       commit({
-        ...net,
-        airways: net.airways.map((a) => (a.id === airwayId ? { ...a, fan } : a)),
+        ...network,
+        airways: network.airways.map((a) => (a.id === airwayId ? { ...a, fan } : a)),
+      });
+    },
+
+    // Set explicit stage membership for an airway (must belong to ≥1 stage).
+    setAirwayStages: (airwayId, stageIds) => {
+      if (stageIds.length === 0) return;
+      const { network, stages } = get();
+      const valid = stageIds.filter((id) => stages.some((s) => s.id === id));
+      if (valid.length === 0) return;
+      commit({
+        ...network,
+        airways: network.airways.map((a) => (a.id === airwayId ? { ...a, stages: valid } : a)),
       });
     },
 
     deleteSelected: () => {
-      const { selection } = get();
+      const { selection, network, stages, activeStageId } = get();
       if (!selection) return;
-      const net = get().activeNetwork();
       if (selection.type === 'node') {
+        // Removing a junction removes it and every airway touching it (all stages).
         commit({
-          nodes: net.nodes.filter((n) => n.id !== selection.id),
-          // drop airways touching the removed node
-          airways: net.airways.filter(
+          nodes: network.nodes.filter((n) => n.id !== selection.id),
+          airways: network.airways.filter(
             (a) => a.from !== selection.id && a.to !== selection.id,
           ),
         });
       } else {
-        commit({ ...net, airways: net.airways.filter((a) => a.id !== selection.id) });
+        // Removing an airway drops it from the ACTIVE stage only; if no stage
+        // membership remains, it leaves the pool entirely.
+        const allIds = stages.map((s) => s.id);
+        const airways = network.airways
+          .map((a) => {
+            if (a.id !== selection.id) return a;
+            const remaining = materialize(a.stages, allIds).filter((id) => id !== activeStageId);
+            return { ...a, stages: remaining };
+          })
+          .filter((a) => !(a.id === selection.id && (a.stages?.length ?? 0) === 0));
+        commit({ ...network, airways });
       }
       set({ selection: null });
     },
 
     beginHistory: () => {
-      const net = get().activeNetwork();
-      set({ past: [...get().past, clone(net)], future: [] });
+      set({ past: [...get().past, clone(get().network)], future: [] });
     },
 
     moveNodeLive: (id, x, y) => {
-      const net = get().activeNetwork();
-      setActiveNetwork({
-        ...net,
-        nodes: net.nodes.map((n) => (n.id === id ? { ...n, x, y } : n)),
+      const { network } = get();
+      setPool({
+        ...network,
+        nodes: network.nodes.map((n) => (n.id === id ? { ...n, x, y } : n)),
       });
     },
 
@@ -271,7 +344,6 @@ export const useNetworkStore = create<AppState>((set, get) => {
       const net = get().activeNetwork();
       try {
         const result = solveNetwork(net, { tolerance: 1e-6, maxIterations: 1000 });
-        // Contaminant transport (only if any node defines a source/injection).
         const hasContaminant = net.nodes.some(
           (n) => n.contaminantConcentration != null || n.contaminantInjection != null,
         );
@@ -290,16 +362,15 @@ export const useNetworkStore = create<AppState>((set, get) => {
       }
     },
 
-    setPrimaryDisplay: (primary) =>
-      set({ display: { ...get().display, primary } }),
-    setSecondaryDisplay: (secondary) =>
-      set({ display: { ...get().display, secondary } }),
+    setPrimaryDisplay: (primary) => set({ display: { ...get().display, primary } }),
+    setSecondaryDisplay: (secondary) => set({ display: { ...get().display, secondary } }),
 
     newModel: () => {
-      const scenario: Scenario = { id: uid('sc'), name: 'Base', network: { nodes: [], airways: [] } };
+      const stage: Stage = { id: uid('st'), name: 'Base' };
       set({
-        scenarios: [scenario],
-        activeScenarioId: scenario.id,
+        network: { nodes: [], airways: [] },
+        stages: [stage],
+        activeStageId: stage.id,
         selection: null,
         result: null,
         resultStale: true,
@@ -309,11 +380,22 @@ export const useNetworkStore = create<AppState>((set, get) => {
       });
     },
 
-    loadNetwork: (network, name = 'Imported') => {
-      const scenario: Scenario = { id: uid('sc'), name, network };
+    loadModel: (network, importedStages) => {
+      // Use the imported stages if present; otherwise wrap everything in a Base stage.
+      let stages: Stage[];
+      let pool: VentNetwork;
+      if (importedStages && importedStages.length > 0) {
+        stages = importedStages;
+        pool = network;
+      } else {
+        const stage: Stage = { id: uid('st'), name: 'Base' };
+        stages = [stage];
+        pool = stampStage(network, stage.id);
+      }
       set({
-        scenarios: [scenario],
-        activeScenarioId: scenario.id,
+        network: pool,
+        stages,
+        activeStageId: stages[0].id,
         selection: null,
         result: null,
         resultStale: true,
@@ -323,79 +405,116 @@ export const useNetworkStore = create<AppState>((set, get) => {
       });
     },
 
-    addScenario: () => {
-      const { scenarios, activeScenarioId } = get();
-      const current = scenarios.find((s) => s.id === activeScenarioId)!;
-      const scenario: Scenario = {
-        id: uid('sc'),
-        name: `${current.name} copy`,
-        network: clone(current.network),
+    addStage: () => {
+      const { stages } = get();
+      if (stages.length >= MAX_STAGES) return;
+      const stage: Stage = { id: uid('st'), name: `Stage ${stages.length + 1}` };
+      // A brand-new stage is empty: existing items carry explicit membership that
+      // does not include it. Switching clears results (no auto-resim).
+      set({
+        stages: [...stages, stage],
+        activeStageId: stage.id,
+        selection: null,
+        result: null,
+        resultStale: true,
+        past: [],
+        future: [],
+      });
+    },
+
+    duplicateStage: () => {
+      const { stages, activeStageId, network } = get();
+      if (stages.length >= MAX_STAGES) return;
+      const source = stages.find((s) => s.id === activeStageId) ?? stages[0];
+      const stage: Stage = { id: uid('st'), name: `${source.name} copy` };
+      const allIds = [...stages.map((s) => s.id), stage.id];
+      // Every item visible in the source stage joins the new stage too, so they
+      // become SHARED between the two (edits propagate to both).
+      const addToStage = <T extends { stages?: string[] }>(item: T): T =>
+        inStage(item, activeStageId)
+          ? { ...item, stages: Array.from(new Set([...materialize(item.stages, allIds), stage.id])) }
+          : item;
+      set({
+        network: {
+          nodes: network.nodes.map(addToStage),
+          airways: network.airways.map(addToStage),
+        },
+        stages: [...stages, stage],
+        activeStageId: stage.id,
+        selection: null,
+        result: null,
+        resultStale: true,
+        past: [],
+        future: [],
+      });
+    },
+
+    switchStage: (id) =>
+      set({
+        activeStageId: id,
+        selection: null,
+        past: [],
+        future: [],
+        result: null, // no auto-resim on stage switch — require an explicit solve
+        resultStale: true,
+        solveError: null,
+      }),
+
+    renameStage: (id, name) =>
+      set({ stages: get().stages.map((s) => (s.id === id ? { ...s, name } : s)) }),
+
+    deleteStage: (id) => {
+      const { stages, activeStageId, network } = get();
+      if (stages.length <= 1) return;
+      const remaining = stages.filter((s) => s.id !== id);
+      const remainingIds = remaining.map((s) => s.id);
+      // Remove the stage from every item; drop items left with no stage at all.
+      const dropStage = <T extends { stages?: string[] }>(item: T): T | null => {
+        if (!item.stages || item.stages.length === 0) return item; // ubiquitous: unaffected
+        const next = item.stages.filter((sid) => sid !== id);
+        return next.length === 0 ? null : { ...item, stages: next };
       };
+      const nodes = network.nodes.map(dropStage).filter((n): n is VentNode => n !== null);
+      const airways = network.airways.map(dropStage).filter((a): a is Airway => a !== null);
+      // Prune airways whose endpoints were removed.
+      const nodeIds = new Set(nodes.map((n) => n.id));
+      const keptAirways = airways.filter((a) => nodeIds.has(a.from) && nodeIds.has(a.to));
       set({
-        scenarios: [...scenarios, scenario],
-        activeScenarioId: scenario.id,
-        past: [],
-        future: [],
+        network: { nodes, airways: keptAirways },
+        stages: remaining,
+        activeStageId: activeStageId === id ? remainingIds[0] : activeStageId,
+        selection: null,
         result: null,
         resultStale: true,
-      });
-    },
-
-    switchScenario: (id) =>
-      set({
-        activeScenarioId: id,
-        selection: null,
-        past: [],
-        future: [],
-        result: null,
-        resultStale: true,
-        solveError: null,
-      }),
-
-    renameScenario: (id, name) =>
-      set({
-        scenarios: get().scenarios.map((s) => (s.id === id ? { ...s, name } : s)),
-      }),
-
-    deleteScenario: (id) => {
-      const { scenarios, activeScenarioId } = get();
-      if (scenarios.length <= 1) return;
-      const remaining = scenarios.filter((s) => s.id !== id);
-      const nextActive = activeScenarioId === id ? remaining[0].id : activeScenarioId;
-      set({
-        scenarios: remaining,
-        activeScenarioId: nextActive,
-        selection: null,
         past: [],
         future: [],
       });
     },
 
     undo: () => {
-      const { past, future } = get();
+      const { past, network } = get();
       if (past.length === 0) return;
-      const net = get().activeNetwork();
       const prev = past[past.length - 1];
-      set({ past: past.slice(0, -1), future: [clone(net), ...future] });
-      setActiveNetwork(prev);
+      set({ past: past.slice(0, -1), future: [clone(network), ...get().future], resultStale: true });
+      set({ network: prev });
     },
 
     redo: () => {
-      const { past, future } = get();
+      const { future, network } = get();
       if (future.length === 0) return;
-      const net = get().activeNetwork();
-      const nextNet = future[0];
-      set({ past: [...past, clone(net)], future: future.slice(1) });
-      setActiveNetwork(nextNet);
+      const next = future[0];
+      set({ past: [...get().past, clone(network)], future: future.slice(1), resultStale: true });
+      set({ network: next });
     },
   };
 });
 
-// --- autosave to localStorage (model + display only) ---
+// --- autosave to localStorage (model + stages + display only) ---
 useNetworkStore.subscribe((state) => {
   const data: PersistShape = {
-    scenarios: state.scenarios,
-    activeScenarioId: state.activeScenarioId,
+    network: state.network,
+    stages: state.stages,
+    activeStageId: state.activeStageId,
     display: state.display,
   };
   try {

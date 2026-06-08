@@ -3,6 +3,7 @@ import { useNetworkStore } from '../store/networkStore';
 import { useShallow } from 'zustand/react/shallow';
 import { computeRange, colorForValue } from '../display/mapping';
 import { colorValue } from '../display/variables';
+import { FAN_STATE_STYLE } from '../display/fanStyle';
 import type { Airway, VentNode } from '../model/types';
 
 interface View {
@@ -19,7 +20,13 @@ function airwayPath(
   from: VentNode,
   to: VentNode,
   offsetIndex: number,
-): { d: string; mid: { x: number; y: number }; angle: number } {
+): {
+  d: string;
+  mid: { x: number; y: number };
+  angle: number;
+  perp: { x: number; y: number };
+  off: number;
+} {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const len = Math.hypot(dx, dy) || 1;
@@ -35,7 +42,30 @@ function airwayPath(
   const mx = 0.25 * from.x + 0.5 * cx + 0.25 * to.x;
   const my = 0.25 * from.y + 0.5 * cy + 0.25 * to.y;
   const angle = (Math.atan2(to.y - cy, to.x - cx) * 180) / Math.PI;
-  return { d, mid: { x: mx, y: my }, angle };
+  return { d, mid: { x: mx, y: my }, angle, perp: { x: px, y: py }, off };
+}
+
+/**
+ * Label placement for an airway. Single airways sit 12px above the midpoint
+ * (textAnchor middle). Parallel branches are pushed outward along the curve's
+ * bulge direction and anchored on the outer side so their (often long) labels
+ * grow away from each other instead of overlapping on the shared centerline.
+ */
+function airwayLabelPlacement(
+  mid: { x: number; y: number },
+  perp: { x: number; y: number },
+  off: number,
+): { x: number; y: number; anchor: 'start' | 'middle' | 'end' } {
+  if (off === 0) return { x: mid.x, y: mid.y - 12, anchor: 'middle' };
+  const dir = off > 0 ? 1 : -1;
+  const ux = perp.x * dir; // unit perpendicular pointing to this branch's bulge side
+  const uy = perp.y * dir;
+  const pad = 16;
+  const x = mid.x + ux * pad;
+  // keep text visually centered on its baseline; nudge down when pushed below the line
+  const y = mid.y + uy * pad + (uy > 0 ? 9 : 0);
+  const anchor: 'start' | 'middle' | 'end' = ux > 0.3 ? 'start' : ux < -0.3 ? 'end' : 'middle';
+  return { x, y, anchor };
 }
 
 export function Canvas() {
@@ -238,7 +268,8 @@ export function Canvas() {
         const seen = pairSeen.get(key) ?? 0;
         pairSeen.set(key, seen + 1);
         const offsetIndex = seen - (count - 1) / 2;
-        const { d, mid, angle } = airwayPath(from, to, offsetIndex);
+        const { d, mid, angle, perp, off } = airwayPath(from, to, offsetIndex);
+        const label = airwayLabelPlacement(mid, perp, off);
 
         const res = resultById.get(a.id);
         const reversed = res ? res.Q < 0 : false;
@@ -247,6 +278,8 @@ export function Canvas() {
           stroke = colorForValue(colorValue(display.primary.variable, res), range);
         }
         const selected = selection?.type === 'airway' && selection.id === a.id;
+        // Fan glyph colour follows the solved operating state (blue until solved).
+        const fanColor = res?.fanState ? FAN_STATE_STYLE[res.fanState].color : '#2563eb';
 
         return (
           <g key={a.id} className="cursor-pointer" onClick={(e) => onAirwayClick(e, a)}>
@@ -261,10 +294,10 @@ export function Canvas() {
               markerStart={reversed ? 'url(#arrow)' : undefined}
             />
             {a.fan && (
-              <circle cx={mid.x} cy={mid.y} r={7} fill="#fff" stroke="#2563eb" strokeWidth={2} />
+              <circle cx={mid.x} cy={mid.y} r={7} fill="#fff" stroke={fanColor} strokeWidth={2} />
             )}
             {a.fan && (
-              <text x={mid.x} y={mid.y + 3} textAnchor="middle" fontSize={9} fill="#2563eb">
+              <text x={mid.x} y={mid.y + 3} textAnchor="middle" fontSize={9} fill={fanColor}>
                 F
               </text>
             )}
@@ -280,7 +313,7 @@ export function Canvas() {
                 transform={`rotate(${angle} ${mid.x} ${mid.y})`}
               />
             )}
-            <text x={mid.x} y={mid.y - 12} textAnchor="middle" fontSize={11} fill="#334155">
+            <text x={label.x} y={label.y} textAnchor={label.anchor} fontSize={11} fill="#334155">
               {a.label ?? a.id}
             </text>
           </g>

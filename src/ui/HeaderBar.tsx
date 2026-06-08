@@ -1,5 +1,6 @@
 import { useNetworkStore } from '../store/networkStore';
 import { useShallow } from 'zustand/react/shallow';
+import { MAX_STAGES } from '../model/types';
 import {
   DISPLAY_VARIABLES,
   DISPLAY_VARIABLE_LIST,
@@ -51,12 +52,13 @@ function DisplaySelector({
 
 export function HeaderBar() {
   const {
-    scenarios,
-    activeScenarioId,
-    switchScenario,
-    addScenario,
-    renameScenario,
-    deleteScenario,
+    stages,
+    activeStageId,
+    switchStage,
+    addStage,
+    duplicateStage,
+    renameStage,
+    deleteStage,
     display,
     setPrimaryDisplay,
     setSecondaryDisplay,
@@ -64,12 +66,13 @@ export function HeaderBar() {
     setViewMode,
   } = useNetworkStore(
     useShallow((s) => ({
-      scenarios: s.scenarios,
-      activeScenarioId: s.activeScenarioId,
-      switchScenario: s.switchScenario,
-      addScenario: s.addScenario,
-      renameScenario: s.renameScenario,
-      deleteScenario: s.deleteScenario,
+      stages: s.stages,
+      activeStageId: s.activeStageId,
+      switchStage: s.switchStage,
+      addStage: s.addStage,
+      duplicateStage: s.duplicateStage,
+      renameStage: s.renameStage,
+      deleteStage: s.deleteStage,
       display: s.display,
       setPrimaryDisplay: s.setPrimaryDisplay,
       setSecondaryDisplay: s.setSecondaryDisplay,
@@ -78,16 +81,18 @@ export function HeaderBar() {
     })),
   );
 
+  const atMax = stages.length >= MAX_STAGES;
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-3 py-1.5">
       <div className="flex items-center gap-2 text-sm">
-        <span className="text-slate-500">Stage / Scenario</span>
+        <span className="text-slate-500">Stage</span>
         <select
           className="rounded border border-slate-300 bg-white px-2 py-0.5"
-          value={activeScenarioId}
-          onChange={(e) => switchScenario(e.target.value)}
+          value={activeStageId}
+          onChange={(e) => switchStage(e.target.value)}
         >
-          {scenarios.map((s) => (
+          {stages.map((s) => (
             <option key={s.id} value={s.id}>
               {s.name}
             </option>
@@ -95,19 +100,29 @@ export function HeaderBar() {
         </select>
         <button
           type="button"
-          className="rounded border border-slate-300 px-1.5 py-0.5 hover:bg-slate-100"
-          title="Duplicate current scenario"
-          onClick={addScenario}
+          className="rounded border border-slate-300 px-1.5 py-0.5 hover:bg-slate-100 disabled:opacity-40"
+          title="New empty stage"
+          disabled={atMax}
+          onClick={addStage}
         >
           ＋
         </button>
         <button
           type="button"
+          className="rounded border border-slate-300 px-1.5 py-0.5 hover:bg-slate-100 disabled:opacity-40"
+          title="Duplicate stage (airways become shared with the copy)"
+          disabled={atMax}
+          onClick={duplicateStage}
+        >
+          ⧉
+        </button>
+        <button
+          type="button"
           className="rounded border border-slate-300 px-1.5 py-0.5 hover:bg-slate-100"
-          title="Rename current scenario"
+          title="Rename current stage"
           onClick={() => {
-            const name = prompt('Scenario name', scenarios.find((s) => s.id === activeScenarioId)?.name);
-            if (name) renameScenario(activeScenarioId, name);
+            const name = prompt('Stage name', stages.find((s) => s.id === activeStageId)?.name);
+            if (name) renameStage(activeStageId, name);
           }}
         >
           ✎
@@ -115,12 +130,13 @@ export function HeaderBar() {
         <button
           type="button"
           className="rounded border border-slate-300 px-1.5 py-0.5 hover:bg-slate-100 disabled:opacity-40"
-          title="Delete current scenario"
-          disabled={scenarios.length <= 1}
-          onClick={() => deleteScenario(activeScenarioId)}
+          title="Delete current stage"
+          disabled={stages.length <= 1}
+          onClick={() => deleteStage(activeStageId)}
         >
           🗑
         </button>
+        <span className="text-xs text-slate-400">{stages.length}/{MAX_STAGES}</span>
       </div>
 
       <div className="flex flex-wrap items-center gap-4">

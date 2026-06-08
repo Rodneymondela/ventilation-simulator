@@ -23,6 +23,13 @@ export interface VentNode {
   y: number;
   z: number;
   /**
+   * IDs of the stages this node belongs to. Undefined or empty means the node is
+   * present in EVERY stage (ubiquitous) — the default for imported/legacy data.
+   * A node is also shown in a stage if any airway visible in that stage touches
+   * it, so endpoints are never dangling.
+   */
+  stages?: string[];
+  /**
    * Optional fixed (boundary) pressure in Pa, e.g. a surface/atmosphere
    * connection. `null`/undefined means it is a free internal junction whose
    * pressure is solved. (Boundary handling is added at the network stage; the
@@ -59,6 +66,12 @@ export interface Fan {
   name?: string;
   /** Characteristic curve points; need not be pre-sorted. */
   curve: FanCurvePoint[];
+  /**
+   * Switched off: the fan stays attached (and editable) but contributes no
+   * pressure to the solve, so the branch behaves as a plain airway. Reported
+   * fan state is then "off".
+   */
+  off?: boolean;
 }
 
 /** A branch connecting two nodes (a drift / roadway / shaft). */
@@ -82,6 +95,20 @@ export interface Airway {
   /** Free-text airway type label (e.g. "intake", "return", "shaft"). */
   type?: string;
   /**
+   * IDs of the stages this airway belongs to. Undefined or empty means the
+   * airway is present in EVERY stage (ubiquitous). An airway shared across
+   * stages reflects edits everywhere it appears (single pooled object); a
+   * stage-unique airway carries just one stage id, so edits do not leak.
+   */
+  stages?: string[];
+  /**
+   * Atkinson pressure-loss exponent n in p = R·Q^n. Defaults to 2 (fully
+   * turbulent square law). Set toward 1 to model laminar, low-velocity airways
+   * (p ∝ Q). In Ventsim this exponent rides on the airway's air type; here it
+   * is a per-airway value. Clamped to [1, 2] by the solver.
+   */
+  flowExponent?: number;
+  /**
    * If set, this resistance (Pa·s^2/m^6) is used INSTEAD of the Atkinson
    * geometric calculation. Useful for tests and manually-specified branches.
    * The regulator resistance (if any) is still added on top.
@@ -92,4 +119,42 @@ export interface Airway {
 export interface VentNetwork {
   nodes: VentNode[];
   airways: Airway[];
+}
+
+/**
+ * A named stage (Ventsim staging model): a mine-timeline phase OR an alternative
+ * design option. Up to {@link MAX_STAGES} per model. Airways/nodes reference
+ * stages by id via their `stages` membership; the network itself is a single
+ * shared pool, and each stage is a filtered view of it.
+ */
+export interface Stage {
+  id: string;
+  name: string;
+}
+
+/** Ventsim supports up to 24 stages in one model file. */
+export const MAX_STAGES = 24;
+
+/**
+ * Whether a node/airway is present in stage `stageId`. Undefined or empty
+ * membership means "all stages".
+ */
+export function inStage(item: { stages?: string[] }, stageId: string): boolean {
+  return !item.stages || item.stages.length === 0 || item.stages.includes(stageId);
+}
+
+/**
+ * The filtered view of the pooled network for one stage: airways belonging to
+ * the stage, plus every node either assigned to the stage or touched by one of
+ * those airways (so airway endpoints are never dangling).
+ */
+export function stageView(pool: VentNetwork, stageId: string): VentNetwork {
+  const airways = pool.airways.filter((a) => inStage(a, stageId));
+  const referenced = new Set<string>();
+  for (const a of airways) {
+    referenced.add(a.from);
+    referenced.add(a.to);
+  }
+  const nodes = pool.nodes.filter((n) => inStage(n, stageId) || referenced.has(n.id));
+  return { nodes, airways };
 }

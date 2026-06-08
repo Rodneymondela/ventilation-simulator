@@ -10,6 +10,7 @@ function sortedCurve(fan: Fan): FanCurvePoint[] {
  * segment's slope is used to extrapolate (so the solver always has a value).
  */
 export function fanPressure(fan: Fan, q: number): number {
+  if (fan.off) return 0;
   const pts = sortedCurve(fan);
   if (pts.length === 0) return 0;
   if (pts.length === 1) return pts[0].p;
@@ -40,6 +41,7 @@ export function fanPressure(fan: Fan, q: number): number {
  * Newton step. Typically negative (pressure falls as flow rises).
  */
 export function fanSlope(fan: Fan, q: number): number {
+  if (fan.off) return 0;
   const pts = sortedCurve(fan);
   if (pts.length < 2) return 0;
 
@@ -57,4 +59,27 @@ export function fanSlope(fan: Fan, q: number): number {
     }
   }
   return 0;
+}
+
+/** Operating state of a fan, for display and status glyphs. */
+export type FanState = 'normal' | 'off' | 'reverse' | 'stalled';
+
+/**
+ * Classify a fan's operating state at solved flow `q` (m^3/s, positive = the
+ * fan's from->to boost direction):
+ *   - `off`     — switched off; contributes no pressure
+ *   - `reverse` — air flows backward through the fan (q < 0)
+ *   - `stalled` — operating on the rising (positive-slope) part of the curve,
+ *                 the aerodynamically unstable region near/left of the peak
+ *   - `normal`  — forward flow on the stable (falling) part of the curve
+ *
+ * The stall test uses the local curve slope, so it only fires for fan curves
+ * that actually have a rising region; a purely monotonic-falling curve never
+ * reports `stalled`.
+ */
+export function fanState(fan: Fan, q: number): FanState {
+  if (fan.off) return 'off';
+  if (q < 0) return 'reverse';
+  if (fanSlope(fan, q) > 0) return 'stalled';
+  return 'normal';
 }

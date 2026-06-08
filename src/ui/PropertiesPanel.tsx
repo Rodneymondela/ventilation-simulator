@@ -1,6 +1,7 @@
 import { useNetworkStore } from '../store/networkStore';
 import { useShallow } from 'zustand/react/shallow';
 import { airwayResistance } from '../solver';
+import { FAN_STATE_STYLE } from '../display/fanStyle';
 import type { Airway, Fan, VentNode } from '../model/types';
 
 function Field({
@@ -127,13 +128,23 @@ function FanEditor({ airway }: { airway: Airway }) {
     <div className="mt-2 rounded border border-blue-200 bg-blue-50/50 p-2">
       <div className="mb-1 flex items-center justify-between">
         <span className="text-sm font-medium text-blue-700">Fan curve (Q, P)</span>
-        <button
-          type="button"
-          className="text-xs text-red-600 hover:underline"
-          onClick={() => setFan(airway.id, null)}
-        >
-          remove fan
-        </button>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={fan.off ?? false}
+              onChange={(e) => update({ off: e.target.checked })}
+            />
+            off
+          </label>
+          <button
+            type="button"
+            className="text-xs text-red-600 hover:underline"
+            onClick={() => setFan(airway.id, null)}
+          >
+            remove fan
+          </button>
+        </div>
       </div>
       <div className="space-y-1">
         {fan.curve.map((pt, i) => (
@@ -176,6 +187,47 @@ function FanEditor({ airway }: { airway: Airway }) {
   );
 }
 
+function StagesEditor({ airway }: { airway: Airway }) {
+  const { stages, setAirwayStages } = useNetworkStore(
+    useShallow((s) => ({ stages: s.stages, setAirwayStages: s.setAirwayStages })),
+  );
+  if (stages.length <= 1) return null;
+  const allIds = stages.map((s) => s.id);
+  // Ubiquitous (undefined/empty) membership shows as "in every stage".
+  const member = new Set(airway.stages && airway.stages.length > 0 ? airway.stages : allIds);
+
+  const toggle = (id: string, on: boolean) => {
+    const next = new Set(member);
+    if (on) next.add(id);
+    else next.delete(id);
+    if (next.size === 0) return; // an airway must belong to at least one stage
+    setAirwayStages(airway.id, allIds.filter((sid) => next.has(sid)));
+  };
+
+  return (
+    <div className="mt-2 rounded border border-slate-200 bg-slate-50 p-2">
+      <div className="mb-1 text-sm font-medium text-slate-600">
+        Stages <span className="text-xs text-slate-400">(shared across {member.size})</span>
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        {stages.map((s) => (
+          <label key={s.id} className="flex items-center gap-1 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={member.has(s.id)}
+              onChange={(e) => toggle(s.id, e.target.checked)}
+            />
+            {s.name}
+          </label>
+        ))}
+      </div>
+      <p className="mt-1 text-[11px] text-slate-400">
+        An airway in multiple stages is shared — edits here apply in all of them.
+      </p>
+    </div>
+  );
+}
+
 function AirwayEditor({ airway }: { airway: Airway }) {
   const { updateAirway, setFan, result } = useNetworkStore(
     useShallow((s) => ({ updateAirway: s.updateAirway, setFan: s.setFan, result: s.result })),
@@ -205,7 +257,17 @@ function AirwayEditor({ airway }: { airway: Airway }) {
         onChange={(v) => updateAirway(airway.id, { regulatorResistance: v })}
         suffix="Pa·s²/m⁶"
       />
+      <Field
+        label="Flow exponent n"
+        value={airway.flowExponent ?? 2}
+        step={0.1}
+        onChange={(v) => updateAirway(airway.id, { flowExponent: v })}
+        suffix="2=turb · 1=lam"
+      />
       <p className="text-[11px] text-amber-600">* k is a placeholder — verify against a primary source.</p>
+      <p className="text-[11px] text-slate-400">
+        n is the Atkinson exponent in p = R·Qⁿ (clamped 1–2): 2 = turbulent, ~1 = laminar.
+      </p>
 
       <div className="rounded bg-slate-50 p-2 text-sm">
         <div className="flex justify-between">
@@ -226,10 +288,18 @@ function AirwayEditor({ airway }: { airway: Airway }) {
               <span className="text-slate-500">Pressure drop</span>
               <span className="font-mono">{res.pressureDrop.toFixed(2)} Pa</span>
             </div>
-            {res.fanPressure !== 0 && (
+            {res.fanState && res.fanState !== 'off' && (
               <div className="flex justify-between">
                 <span className="text-slate-500">Fan pressure</span>
                 <span className="font-mono">{res.fanPressure.toFixed(2)} Pa</span>
+              </div>
+            )}
+            {res.fanState && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Fan state</span>
+                <span className={`font-medium ${FAN_STATE_STYLE[res.fanState].text}`}>
+                  {FAN_STATE_STYLE[res.fanState].label}
+                </span>
               </div>
             )}
           </>
@@ -257,6 +327,8 @@ function AirwayEditor({ airway }: { airway: Airway }) {
           + add fan to this airway
         </button>
       )}
+
+      <StagesEditor airway={airway} />
     </div>
   );
 }
