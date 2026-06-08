@@ -1,10 +1,12 @@
 import { create } from 'zustand';
 import type { VentNetwork, VentNode, Airway, Fan } from '../model/types';
 import { createDemoNetwork } from '../model/demoNetwork';
-import { solveNetwork, type SolveResult } from '../solver';
+import { solveNetwork, solveContaminant, type SolveResult } from '../solver';
 import type { DisplaySetting } from '../display/variables';
 
 export type Tool = 'select' | 'addNode' | 'addAirway' | 'addFan' | 'addRegulator' | 'pan';
+
+export type ViewMode = '2d' | '3d';
 
 export type Selection =
   | { type: 'node'; id: string }
@@ -35,11 +37,14 @@ interface AppState {
   activeScenarioId: string;
   selection: Selection;
   tool: Tool;
+  viewMode: ViewMode;
   /** First node chosen while drawing an airway (addAirway tool). */
   pendingFromNode: string | null;
   result: SolveResult | null;
   resultStale: boolean;
   solveError: string | null;
+  /** Whether the last solve's contaminant transport converged (null = not run). */
+  contaminantConverged: boolean | null;
   display: DisplayState;
 
   // history (per active network)
@@ -51,6 +56,7 @@ interface AppState {
 
   // --- tools / selection
   setTool: (tool: Tool) => void;
+  setViewMode: (mode: ViewMode) => void;
   setSelection: (s: Selection) => void;
   setPendingFromNode: (id: string | null) => void;
 
@@ -158,10 +164,12 @@ export const useNetworkStore = create<AppState>((set, get) => {
     ...init,
     selection: null,
     tool: 'select',
+    viewMode: '2d',
     pendingFromNode: null,
     result: null,
     resultStale: true,
     solveError: null,
+    contaminantConverged: null,
     past: [],
     future: [],
 
@@ -171,6 +179,7 @@ export const useNetworkStore = create<AppState>((set, get) => {
     },
 
     setTool: (tool) => set({ tool, pendingFromNode: null }),
+    setViewMode: (viewMode) => set({ viewMode }),
     setSelection: (selection) => set({ selection }),
     setPendingFromNode: (id) => set({ pendingFromNode: id }),
 
@@ -262,7 +271,20 @@ export const useNetworkStore = create<AppState>((set, get) => {
       const net = get().activeNetwork();
       try {
         const result = solveNetwork(net, { tolerance: 1e-6, maxIterations: 1000 });
-        set({ result, resultStale: false, solveError: null });
+        // Contaminant transport (only if any node defines a source/injection).
+        const hasContaminant = net.nodes.some(
+          (n) => n.contaminantConcentration != null || n.contaminantInjection != null,
+        );
+        let contaminantConverged: boolean | null = null;
+        if (hasContaminant) {
+          const c = solveContaminant(net, result.flows);
+          contaminantConverged = c.converged;
+          result.airwayResults = result.airwayResults.map((r) => ({
+            ...r,
+            concentration: c.airwayConcentration[r.airwayId] ?? 0,
+          }));
+        }
+        set({ result, resultStale: false, solveError: null, contaminantConverged });
       } catch (err) {
         set({ solveError: err instanceof Error ? err.message : String(err), result: null });
       }

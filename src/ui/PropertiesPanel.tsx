@@ -80,6 +80,37 @@ function NodeEditor({ node }: { node: VentNode }) {
           suffix="Pa"
         />
       )}
+
+      <div className="mt-2 rounded border border-emerald-200 bg-emerald-50/50 p-2">
+        <div className="mb-1 text-sm font-medium text-emerald-700">Contaminant (approx.)</div>
+        <label className="flex items-center justify-between gap-2 text-sm">
+          <span className="text-slate-600">Hold fixed concentration</span>
+          <input
+            type="checkbox"
+            checked={node.contaminantConcentration != null}
+            onChange={(e) =>
+              updateNode(node.id, { contaminantConcentration: e.target.checked ? 0 : null })
+            }
+          />
+        </label>
+        {node.contaminantConcentration != null && (
+          <Field
+            label="Concentration"
+            value={node.contaminantConcentration}
+            onChange={(v) => updateNode(node.id, { contaminantConcentration: v })}
+            suffix="units"
+          />
+        )}
+        <Field
+          label="Injection rate"
+          value={node.contaminantInjection ?? 0}
+          onChange={(v) => updateNode(node.id, { contaminantInjection: v || null })}
+          suffix="units·m³/s"
+        />
+        <p className="mt-1 text-[11px] text-amber-600">
+          Flow-weighted mixing, conservative tracer. Not a validated exposure model.
+        </p>
+      </div>
     </div>
   );
 }

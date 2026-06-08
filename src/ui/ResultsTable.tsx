@@ -2,15 +2,17 @@ import { useNetworkStore } from '../store/networkStore';
 import { useShallow } from 'zustand/react/shallow';
 
 export function ResultsTable() {
-  const { result, solveError, resultStale, setSelection, selection } = useNetworkStore(
-    useShallow((s) => ({
-      result: s.result,
-      solveError: s.solveError,
-      resultStale: s.resultStale,
-      setSelection: s.setSelection,
-      selection: s.selection,
-    })),
-  );
+  const { result, solveError, resultStale, contaminantConverged, setSelection, selection } =
+    useNetworkStore(
+      useShallow((s) => ({
+        result: s.result,
+        solveError: s.solveError,
+        resultStale: s.resultStale,
+        contaminantConverged: s.contaminantConverged,
+        setSelection: s.setSelection,
+        selection: s.selection,
+      })),
+    );
 
   return (
     <div className="flex h-full flex-col">
@@ -24,6 +26,10 @@ export function ResultsTable() {
         ) : (
           <span className="text-slate-400">no solve yet — press “Run solve”</span>
         )}
+        {contaminantConverged === false && (
+          <span className="text-amber-600">contaminant: no steady state (needs a sink/fresh node)</span>
+        )}
+        {contaminantConverged === true && <span className="text-emerald-600">contaminant solved</span>}
         {resultStale && result && <span className="text-amber-600">(network changed since solve)</span>}
         {solveError && <span className="text-red-600">error: {solveError}</span>}
       </div>

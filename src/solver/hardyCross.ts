@@ -51,6 +51,11 @@ export interface AirwayResult {
   pressureDrop: number;
   /** Fan pressure rise at the solved flow, Pa (0 if no fan) */
   fanPressure: number;
+  /**
+   * Contaminant concentration carried by this airway (upstream node value),
+   * arbitrary units. Populated only when a contaminant solve has run.
+   */
+  concentration?: number;
 }
 
 export interface SolveResult {

@@ -2,3 +2,5 @@ export { atkinsonResistance, airwayResistance, squareLawDrop } from './resistanc
 export { fanPressure, fanSlope } from './fan';
 export { solveNetwork } from './hardyCross';
 export type { SolveOptions, SolveResult, AirwayResult } from './hardyCross';
+export { solveContaminant } from './contaminant';
+export type { ContaminantResult, ContaminantOptions } from './contaminant';

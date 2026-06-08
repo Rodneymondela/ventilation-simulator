@@ -29,6 +29,20 @@ export interface VentNode {
    * baseline loop solver treats the network as closed.)
    */
   fixedPressure?: number | null;
+
+  /**
+   * Optional fixed contaminant concentration (arbitrary units, e.g. a fresh-air
+   * intake at 0, or a held source concentration). When set, this node's
+   * concentration is clamped to this value in the transport solve.
+   * APPROXIMATE — not a validated occupational-exposure model.
+   */
+  contaminantConcentration?: number | null;
+
+  /**
+   * Optional contaminant mass-injection rate at this node (units·m³/s, i.e.
+   * concentration × flow). Added to the node's contaminant balance.
+   */
+  contaminantInjection?: number | null;
 }
 
 /** One (pressure, flow) sample of a fan characteristic curve. */

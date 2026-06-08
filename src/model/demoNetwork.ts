@@ -11,9 +11,11 @@ const k = 0.012; // PLACEHOLDER Atkinson friction factor — verify against a pr
 export function createDemoNetwork(): VentNetwork {
   return {
     nodes: [
-      { id: 'A', label: 'A (fan inlet)', x: 120, y: 360, z: 0 },
+      // A holds fresh air (contaminant 0); C injects a contaminant (e.g. dust
+      // at a working area) so the transport layer shows a gradient on solve.
+      { id: 'A', label: 'A (fan inlet)', x: 120, y: 360, z: 0, contaminantConcentration: 0 },
       { id: 'B', label: 'B', x: 360, y: 160, z: -50 },
-      { id: 'C', label: 'C (split)', x: 640, y: 160, z: -120 },
+      { id: 'C', label: 'C (split)', x: 640, y: 160, z: -120, contaminantInjection: 100 },
       { id: 'D', label: 'D (junction)', x: 640, y: 520, z: -120 },
     ],
     airways: [

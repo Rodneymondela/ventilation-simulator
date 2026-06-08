@@ -26,7 +26,7 @@ Built incrementally. Current progress:
 - [x] **Stage 3 — 2D SVG network editor wired to the solver** (`src/ui`)
 - [x] **Stage 4 — display variables / units / colour legend** (`src/display`)
 - [x] **Stage 5 — JSON / CSV save, open, export** (`src/io`) + localStorage autosave
-- [ ] Stage 6 — optional 3D + environmental (contaminant) layer
+- [x] **Stage 6 — depth-aware 3D view (Three.js) + contaminant transport layer**
 
 ## Using the app
 
@@ -45,11 +45,22 @@ Built incrementally. Current progress:
 - **File menu:** New, Open (JSON), Save (JSON), Export network/results (CSV).
   The model also autosaves to `localStorage`.
 - A starter demo network (5 airways, 1 fan, 1 mesh) loads on first run.
+- **2D / 3D toggle** (header): the 3D view (Three.js) places nodes by depth (z),
+  orbit/zoom with the mouse, and colours airways by the primary variable.
+- **Contaminant layer:** mark a node as a fixed concentration (e.g. fresh-air
+  intake = 0) and/or give it an injection rate (a source) in the Properties
+  panel, then Run solve and choose **Contaminant** as the display variable. The
+  demo seeds a source at C and fresh air at A. This is an APPROXIMATE,
+  conservative-tracer / perfect-mixing model — **not** a validated exposure tool.
+  A bounded steady state needs a fixed-concentration node or through-flow to
+  atmosphere; a closed loop with net injection reports "no steady state".
 
 ## Tech stack
 
 - **Vite 6 + React 19 + TypeScript** for the UI (pinned to Vite 6 for Node 20.17
   compatibility).
+- **Zustand** state, **Tailwind v4** styling, **SVG** 2D editor, **Three.js**
+  (lazy-loaded) for the optional 3D view.
 - **Vitest** for unit tests.
 - The **solver is a framework-independent module** under `src/solver/` with no
   React imports, so the physics is tested in isolation and the UI can change

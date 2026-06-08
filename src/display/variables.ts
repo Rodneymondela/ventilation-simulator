@@ -8,7 +8,7 @@ import type { AirwayResult } from '../solver';
  * and a number of decimals for labels.
  */
 
-export type DisplayVariableId = 'airflow' | 'velocity' | 'pressure' | 'resistance';
+export type DisplayVariableId = 'airflow' | 'velocity' | 'pressure' | 'resistance' | 'contaminant';
 
 export interface UnitDef {
   id: string;
@@ -69,6 +69,13 @@ export const DISPLAY_VARIABLES: Record<DisplayVariableId, DisplayVariableDef> = 
     siValue: (r) => r.R,
     useMagnitude: false,
     units: [{ id: 'si', label: 'Pa·s²/m⁶', factor: 1, decimals: 4 }],
+  },
+  contaminant: {
+    id: 'contaminant',
+    label: 'Contaminant',
+    siValue: (r) => r.concentration ?? 0,
+    useMagnitude: false,
+    units: [{ id: 'rel', label: 'units', factor: 1, decimals: 2 }],
   },
 };
 

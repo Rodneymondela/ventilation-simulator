@@ -60,6 +60,8 @@ export function HeaderBar() {
     display,
     setPrimaryDisplay,
     setSecondaryDisplay,
+    viewMode,
+    setViewMode,
   } = useNetworkStore(
     useShallow((s) => ({
       scenarios: s.scenarios,
@@ -71,6 +73,8 @@ export function HeaderBar() {
       display: s.display,
       setPrimaryDisplay: s.setPrimaryDisplay,
       setSecondaryDisplay: s.setSecondaryDisplay,
+      viewMode: s.viewMode,
+      setViewMode: s.setViewMode,
     })),
   );
 
@@ -122,6 +126,20 @@ export function HeaderBar() {
       <div className="flex flex-wrap items-center gap-4">
         <DisplaySelector title="Primary" value={display.primary} onChange={setPrimaryDisplay} />
         <DisplaySelector title="Secondary" value={display.secondary} onChange={setSecondaryDisplay} />
+        <div className="flex overflow-hidden rounded border border-slate-300 text-sm">
+          {(['2d', '3d'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setViewMode(mode)}
+              className={`px-2.5 py-0.5 ${
+                viewMode === mode ? 'bg-blue-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              {mode.toUpperCase()}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
