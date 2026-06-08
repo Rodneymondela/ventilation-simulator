@@ -22,10 +22,29 @@ Built incrementally. Current progress:
 - [x] **Stage 2 — Hardy Cross network solver + unit tests** (`src/solver/hardyCross.ts`)
 - [x] **Mandatory solver sanity test passing** (two parallel airways + one fan,
       hand-checked — see below)
-- [ ] Stage 3 — minimal UI wired to the solver
-- [ ] Stage 4 — display variables / units
-- [ ] Stage 5 — JSON / CSV export
+- [x] **Fixed-pressure / atmosphere boundary nodes** in the solver (+ test)
+- [x] **Stage 3 — 2D SVG network editor wired to the solver** (`src/ui`)
+- [x] **Stage 4 — display variables / units / colour legend** (`src/display`)
+- [x] **Stage 5 — JSON / CSV save, open, export** (`src/io`) + localStorage autosave
 - [ ] Stage 6 — optional 3D + environmental (contaminant) layer
+
+## Using the app
+
+`npm run dev`, then:
+
+- **Toolbar tools:** Select/move, Pan, Add node (click canvas), Add airway (click
+  two nodes), Add fan (click an airway), Add regulator (click an airway).
+- **Run solve** colours every airway by the *primary* display variable; a legend
+  shows the scale. Change the **Primary/Secondary** variable and units in the
+  header to recolour/relabel.
+- Drag nodes to reposition; mouse-wheel to zoom, drag the background to pan.
+- The **Properties** panel (right) edits the selected node/airway/fan; the
+  **Results** table (bottom) lists R, Q, velocity and Δp per airway with solver
+  status (converged / iterations / residual / mesh count).
+- **Stage / Scenario** dropdown manages independent named network snapshots.
+- **File menu:** New, Open (JSON), Save (JSON), Export network/results (CSV).
+  The model also autosaves to `localStorage`.
+- A starter demo network (5 airways, 1 fan, 1 mesh) loads on first run.
 
 ## Tech stack
 

@@ -1,0 +1,317 @@
+import { useRef, useState, useCallback } from 'react';
+import { useNetworkStore } from '../store/networkStore';
+import { useShallow } from 'zustand/react/shallow';
+import { computeRange, colorForValue } from '../display/mapping';
+import { colorValue } from '../display/variables';
+import type { Airway, VentNode } from '../model/types';
+
+interface View {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const NODE_R = 12;
+
+/** Quadratic-curve geometry for an airway, offset so parallel branches separate. */
+function airwayPath(
+  from: VentNode,
+  to: VentNode,
+  offsetIndex: number,
+): { d: string; mid: { x: number; y: number }; angle: number } {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  // perpendicular unit vector
+  const px = -dy / len;
+  const py = dx / len;
+  const spacing = 26;
+  const off = offsetIndex * spacing;
+  const cx = (from.x + to.x) / 2 + px * off;
+  const cy = (from.y + to.y) / 2 + py * off;
+  const d = `M ${from.x} ${from.y} Q ${cx} ${cy} ${to.x} ${to.y}`;
+  // point on quadratic at t=0.5
+  const mx = 0.25 * from.x + 0.5 * cx + 0.25 * to.x;
+  const my = 0.25 * from.y + 0.5 * cy + 0.25 * to.y;
+  const angle = (Math.atan2(to.y - cy, to.x - cx) * 180) / Math.PI;
+  return { d, mid: { x: mx, y: my }, angle };
+}
+
+export function Canvas() {
+  const {
+    network,
+    tool,
+    selection,
+    pendingFromNode,
+    result,
+    display,
+    setSelection,
+    addNode,
+    addAirway,
+    setPendingFromNode,
+    setFan,
+    updateAirway,
+    beginHistory,
+    moveNodeLive,
+  } = useNetworkStore(
+    useShallow((s) => ({
+      network: s.activeNetwork(),
+      tool: s.tool,
+      selection: s.selection,
+      pendingFromNode: s.pendingFromNode,
+      result: s.result,
+      display: s.display,
+      setSelection: s.setSelection,
+      addNode: s.addNode,
+      addAirway: s.addAirway,
+      setPendingFromNode: s.setPendingFromNode,
+      setFan: s.setFan,
+      updateAirway: s.updateAirway,
+      beginHistory: s.beginHistory,
+      moveNodeLive: s.moveNodeLive,
+    })),
+  );
+
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [view, setView] = useState<View>({ x: -40, y: -40, w: 900, h: 700 });
+  const drag = useRef<
+    | { kind: 'node'; id: string }
+    | { kind: 'pan'; startX: number; startY: number; viewX: number; viewY: number }
+    | null
+  >(null);
+
+  const nodeById = new Map(network.nodes.map((n) => [n.id, n]));
+
+  // assign offset indices to parallel airways (same unordered node pair)
+  const pairCount = new Map<string, number>();
+  const pairSeen = new Map<string, number>();
+  for (const a of network.airways) {
+    const key = [a.from, a.to].sort().join('|');
+    pairCount.set(key, (pairCount.get(key) ?? 0) + 1);
+  }
+
+  const range = result ? computeRange(result.airwayResults, display.primary.variable) : null;
+  const resultById = new Map((result?.airwayResults ?? []).map((r) => [r.airwayId, r]));
+
+  const toSvg = useCallback(
+    (clientX: number, clientY: number) => {
+      const rect = svgRef.current!.getBoundingClientRect();
+      return {
+        x: view.x + ((clientX - rect.left) / rect.width) * view.w,
+        y: view.y + ((clientY - rect.top) / rect.height) * view.h,
+      };
+    },
+    [view],
+  );
+
+  const onWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const rect = svgRef.current!.getBoundingClientRect();
+    const mx = view.x + ((e.clientX - rect.left) / rect.width) * view.w;
+    const my = view.y + ((e.clientY - rect.top) / rect.height) * view.h;
+    const factor = e.deltaY > 0 ? 1.1 : 1 / 1.1;
+    const w = view.w * factor;
+    const h = view.h * factor;
+    // keep cursor point stationary
+    const x = mx - ((mx - view.x) * w) / view.w;
+    const y = my - ((my - view.y) * h) / view.h;
+    setView({ x, y, w, h });
+  };
+
+  const onBackgroundPointerDown = (e: React.PointerEvent) => {
+    if (e.target !== e.currentTarget && (e.target as Element).tagName !== 'rect') return;
+    const p = toSvg(e.clientX, e.clientY);
+    if (tool === 'addNode') {
+      addNode(Math.round(p.x), Math.round(p.y));
+      return;
+    }
+    if (tool === 'addAirway') {
+      setPendingFromNode(null);
+      setSelection(null);
+      return;
+    }
+    if (tool === 'select' || tool === 'pan') {
+      setSelection(null);
+      drag.current = { kind: 'pan', startX: e.clientX, startY: e.clientY, viewX: view.x, viewY: view.y };
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    }
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    if (d.kind === 'pan') {
+      const rect = svgRef.current!.getBoundingClientRect();
+      const dx = ((e.clientX - d.startX) / rect.width) * view.w;
+      const dy = ((e.clientY - d.startY) / rect.height) * view.h;
+      setView((v) => ({ ...v, x: d.viewX - dx, y: d.viewY - dy }));
+    } else if (d.kind === 'node') {
+      const p = toSvg(e.clientX, e.clientY);
+      moveNodeLive(d.id, Math.round(p.x), Math.round(p.y));
+    }
+  };
+
+  const endDrag = (e: React.PointerEvent) => {
+    if (drag.current) {
+      try {
+        (e.currentTarget as Element).releasePointerCapture(e.pointerId);
+      } catch {
+        /* not captured */
+      }
+    }
+    drag.current = null;
+  };
+
+  const onNodePointerDown = (e: React.PointerEvent, node: VentNode) => {
+    e.stopPropagation();
+    if (tool === 'addAirway') {
+      if (!pendingFromNode) {
+        setPendingFromNode(node.id);
+      } else {
+        addAirway(pendingFromNode, node.id);
+      }
+      return;
+    }
+    if (tool === 'select') {
+      setSelection({ type: 'node', id: node.id });
+      beginHistory();
+      drag.current = { kind: 'node', id: node.id };
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    }
+  };
+
+  const onAirwayClick = (e: React.MouseEvent, a: Airway) => {
+    e.stopPropagation();
+    if (tool === 'addFan') {
+      if (!a.fan) {
+        setFan(a.id, {
+          id: `fan_${a.id}`,
+          name: `Fan ${a.id}`,
+          curve: [
+            { q: 0, p: 2000 },
+            { q: 100, p: 1500 },
+            { q: 200, p: 0 },
+          ],
+        });
+      }
+      setSelection({ type: 'airway', id: a.id });
+      return;
+    }
+    if (tool === 'addRegulator') {
+      updateAirway(a.id, { regulatorResistance: a.regulatorResistance ?? 0.5 });
+      setSelection({ type: 'airway', id: a.id });
+      return;
+    }
+    setSelection({ type: 'airway', id: a.id });
+  };
+
+  return (
+    <svg
+      ref={svgRef}
+      className="h-full w-full bg-slate-50 touch-none"
+      viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
+      onWheel={onWheel}
+      onPointerDown={onBackgroundPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      onPointerLeave={endDrag}
+      style={{ cursor: tool === 'pan' ? 'grab' : 'default' }}
+    >
+      <defs>
+        <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+          <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e2e8f0" strokeWidth="1" />
+        </pattern>
+        <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569" />
+        </marker>
+      </defs>
+      <rect x={view.x} y={view.y} width={view.w} height={view.h} fill="url(#grid)" />
+
+      {/* airways */}
+      {network.airways.map((a) => {
+        const from = nodeById.get(a.from);
+        const to = nodeById.get(a.to);
+        if (!from || !to) return null;
+        const key = [a.from, a.to].sort().join('|');
+        const count = pairCount.get(key) ?? 1;
+        const seen = pairSeen.get(key) ?? 0;
+        pairSeen.set(key, seen + 1);
+        const offsetIndex = seen - (count - 1) / 2;
+        const { d, mid, angle } = airwayPath(from, to, offsetIndex);
+
+        const res = resultById.get(a.id);
+        const reversed = res ? res.Q < 0 : false;
+        let stroke = '#64748b';
+        if (res && range) {
+          stroke = colorForValue(colorValue(display.primary.variable, res), range);
+        }
+        const selected = selection?.type === 'airway' && selection.id === a.id;
+
+        return (
+          <g key={a.id} className="cursor-pointer" onClick={(e) => onAirwayClick(e, a)}>
+            {/* fat invisible hit area */}
+            <path d={d} fill="none" stroke="transparent" strokeWidth={16} />
+            <path
+              d={d}
+              fill="none"
+              stroke={selected ? '#0f172a' : stroke}
+              strokeWidth={selected ? 6 : 4}
+              markerEnd={reversed ? undefined : 'url(#arrow)'}
+              markerStart={reversed ? 'url(#arrow)' : undefined}
+            />
+            {a.fan && (
+              <circle cx={mid.x} cy={mid.y} r={7} fill="#fff" stroke="#2563eb" strokeWidth={2} />
+            )}
+            {a.fan && (
+              <text x={mid.x} y={mid.y + 3} textAnchor="middle" fontSize={9} fill="#2563eb">
+                F
+              </text>
+            )}
+            {(a.regulatorResistance ?? 0) > 0 && (
+              <rect
+                x={mid.x - 6}
+                y={mid.y - 6}
+                width={12}
+                height={12}
+                fill="#fff"
+                stroke="#b45309"
+                strokeWidth={2}
+                transform={`rotate(${angle} ${mid.x} ${mid.y})`}
+              />
+            )}
+            <text x={mid.x} y={mid.y - 12} textAnchor="middle" fontSize={11} fill="#334155">
+              {a.label ?? a.id}
+            </text>
+          </g>
+        );
+      })}
+
+      {/* nodes */}
+      {network.nodes.map((n) => {
+        const selected = selection?.type === 'node' && selection.id === n.id;
+        const pending = pendingFromNode === n.id;
+        const fixed = n.fixedPressure != null;
+        return (
+          <g
+            key={n.id}
+            className="cursor-pointer"
+            onPointerDown={(e) => onNodePointerDown(e, n)}
+          >
+            <circle
+              cx={n.x}
+              cy={n.y}
+              r={NODE_R}
+              fill={fixed ? '#bae6fd' : '#fff'}
+              stroke={selected ? '#0f172a' : pending ? '#16a34a' : '#475569'}
+              strokeWidth={selected || pending ? 4 : 2}
+            />
+            <text x={n.x} y={n.y - NODE_R - 4} textAnchor="middle" fontSize={11} fill="#0f172a">
+              {n.label ?? n.id}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}

@@ -1,4 +1,4 @@
-import type { VentNetwork } from '../model/types';
+import type { VentNetwork, Fan } from '../model/types';
 import { airwayResistance } from './resistance';
 import { fanPressure, fanSlope } from './fan';
 
@@ -7,14 +7,15 @@ import { fanPressure, fanSlope } from './fan';
  *
  * For each independent loop the algorithm applies a circulating flow correction
  *
- *     ΔQ = -  Σ_b dir_b · ( R_b·Q_b·|Q_b| - p_fan,b(Q_b) )
- *            ----------------------------------------------
+ *     ΔQ = -  Σ_b dir_b · ( R_b·Q_b·|Q_b| - p_fan,b(Q_b) - p_src,b )
+ *            ------------------------------------------------------
  *               Σ_b ( 2·R_b·|Q_b| - p'_fan,b(Q_b) )
  *
  * where the sum runs over the branches of the loop, `dir_b` is +1 if the loop
  * traverses the branch in its from->to orientation and -1 otherwise, and Q_b is
- * the signed branch flow (positive = from->to). Fans add pressure in the
- * from->to direction, so they appear with a minus sign in the head-loss balance.
+ * the signed branch flow (positive = from->to). Fans (and constant boundary
+ * pressure sources) add pressure in the from->to direction, so they appear with
+ * a minus sign in the head-loss balance.
  *
  * The numerator is Kirchhoff's pressure law around the loop (must reach 0); the
  * denominator is its derivative — i.e. a Newton step per loop, applied
@@ -22,8 +23,12 @@ import { fanPressure, fanSlope } from './fan';
  * each fundamental loop starting from the all-zero (continuity-satisfying)
  * state, so flow continuity at every node holds exactly at every iteration.
  *
- * Boundary handling: this baseline solver treats the network as a set of closed
- * loops. Fixed-pressure (atmosphere) nodes are added at the network stage.
+ * BOUNDARY (fixed-pressure / atmosphere) NODES
+ * Any node with `fixedPressure` set is tied to a single virtual reference node
+ * by a zero-resistance virtual branch carrying a constant pressure source equal
+ * to that node's pressure. This lets surface intake/exhaust flow circulate and
+ * imposes the boundary pressures, while keeping the closed-loop solver intact.
+ * Virtual branches are excluded from the reported airway results.
  */
 
 export interface SolveOptions {
@@ -58,7 +63,11 @@ export interface SolveResult {
   /** airwayId -> signed flow, m^3/s */
   flows: Record<string, number>;
   airwayResults: AirwayResult[];
-  /** nodeId -> net flow imbalance (inflow - outflow), m^3/s. ~0 when conserved. */
+  /**
+   * nodeId -> net flow imbalance (inflow - outflow) over REAL airways, m^3/s.
+   * ~0 at internal junctions when conserved. At fixed-pressure nodes this equals
+   * the air exchanged with the surface/atmosphere (expected to be non-zero).
+   */
   nodeImbalance: Record<string, number>;
 }
 
@@ -66,9 +75,13 @@ interface Branch {
   from: number; // node index
   to: number; // node index
   R: number;
-  fan: VentNetwork['airways'][number]['fan'];
+  fan: Fan | null;
+  /** Constant pressure source in the from->to direction, Pa (boundary branches). */
+  pressureSource: number;
   area: number;
   airwayId: string;
+  /** Virtual boundary branch — excluded from reported results. */
+  isVirtual: boolean;
 }
 
 interface LoopMember {
@@ -92,10 +105,46 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
     if (from === undefined || to === undefined) {
       throw new Error(`Airway ${a.id} references an unknown node (${a.from} -> ${a.to})`);
     }
-    return { from, to, R: airwayResistance(a), fan: a.fan ?? null, area: a.area, airwayId: a.id };
+    return {
+      from,
+      to,
+      R: airwayResistance(a),
+      fan: a.fan ?? null,
+      pressureSource: 0,
+      area: a.area,
+      airwayId: a.id,
+      isVirtual: false,
+    };
   });
 
-  const nNodes = network.nodes.length;
+  const realBranchCount = branches.length;
+
+  // --- Boundary handling: tie every fixed-pressure node to one virtual node
+  //     via a constant-pressure virtual branch (reference at pressure 0).
+  const fixedNodes = network.nodes
+    .map((n, i) => ({ n, i }))
+    .filter(({ n }) => n.fixedPressure != null);
+
+  let nNodes = network.nodes.length;
+  if (fixedNodes.length > 0) {
+    const refIndex = nNodes; // appended virtual reference node
+    nNodes += 1;
+    for (const { n, i } of fixedNodes) {
+      // virtual branch ref -> node, constant source = node pressure, so the
+      // node is held at P_ref + p = p (reference is 0 Pa).
+      branches.push({
+        from: refIndex,
+        to: i,
+        R: 0,
+        fan: null,
+        pressureSource: n.fixedPressure as number,
+        area: 0,
+        airwayId: `__atm__${n.id}`,
+        isVirtual: true,
+      });
+    }
+  }
+
   const nBranches = branches.length;
 
   // --- Spanning forest via BFS; non-tree branches are chords (one loop each).
@@ -105,7 +154,6 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
   const visited = new Array<boolean>(nNodes).fill(false);
   const isTreeBranch = new Array<boolean>(nBranches).fill(false);
 
-  // adjacency: node -> list of {other, branch}
   const adj: Array<Array<{ other: number; branch: number }>> = Array.from(
     { length: nNodes },
     () => [],
@@ -139,13 +187,11 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
   for (let ci = 0; ci < nBranches; ci++) {
     if (isTreeBranch[ci]) continue;
     const chord = branches[ci];
-    // loop: chord (from->to), then the tree path from `to` back to `from`.
     const member: LoopMember[] = [{ branch: ci, dir: 1 }];
     const pathNodes = treePathNodes(chord.to, chord.from, parentNode, depth);
     for (let i = 0; i < pathNodes.length - 1; i++) {
       const x = pathNodes[i];
       const y = pathNodes[i + 1];
-      // tree branch between adjacent path nodes is the child's parentBranch
       const bIdx = parentNode[y] === x ? parentBranch[y] : parentBranch[x];
       const b = branches[bIdx];
       member.push({ branch: bIdx, dir: b.from === x && b.to === y ? 1 : -1 });
@@ -164,7 +210,7 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
   // --- Iterate.
   let iterations = 0;
   let residual = 0;
-  let converged = loops.length === 0; // trivially converged if no loops
+  let converged = loops.length === 0;
   for (let iter = 0; iter < maxIterations; iter++) {
     iterations = iter + 1;
     let maxCorrection = 0;
@@ -174,7 +220,8 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
       for (const { branch, dir } of loop) {
         const b = branches[branch];
         const q = Q[branch];
-        const headLoss = b.R * q * Math.abs(q) - (b.fan ? fanPressure(b.fan, q) : 0);
+        const headLoss =
+          b.R * q * Math.abs(q) - (b.fan ? fanPressure(b.fan, q) : 0) - b.pressureSource;
         numerator += dir * headLoss;
         const slope = b.fan ? fanSlope(b.fan, q) : 0;
         denominator += 2 * b.R * Math.abs(q) - slope;
@@ -195,28 +242,31 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
     }
   }
 
-  // --- Assemble results.
+  // --- Assemble results (real airways only).
   const flows: Record<string, number> = {};
-  const airwayResults: AirwayResult[] = branches.map((b, i) => {
+  const airwayResults: AirwayResult[] = [];
+  for (let i = 0; i < realBranchCount; i++) {
+    const b = branches[i];
     const q = Q[i];
     flows[b.airwayId] = q;
-    return {
+    airwayResults.push({
       airwayId: b.airwayId,
       R: b.R,
       Q: q,
       velocity: b.area > 0 ? q / b.area : 0,
       pressureDrop: b.R * q * Math.abs(q),
       fanPressure: b.fan ? fanPressure(b.fan, q) : 0,
-    };
-  });
+    });
+  }
 
   const nodeImbalance: Record<string, number> = {};
   network.nodes.forEach((n) => (nodeImbalance[n.id] = 0));
-  branches.forEach((b, i) => {
+  for (let i = 0; i < realBranchCount; i++) {
+    const b = branches[i];
     const q = Q[i];
     nodeImbalance[network.nodes[b.from].id] -= q; // leaves `from`
     nodeImbalance[network.nodes[b.to].id] += q; // enters `to`
-  });
+  }
 
   return {
     converged,
