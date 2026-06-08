@@ -1,5 +1,28 @@
 import { useEffect, useRef } from 'react';
-import * as THREE from 'three';
+// Named imports (the three.js-recommended form). Note: rollup already tree-shakes
+// the unused slice of three with either import style, so this does not shrink the
+// bundle on its own — the WebGLRenderer + shader library it pulls in is the
+// irreducible ~500kB floor of any three.js WebGL scene. That chunk is isolated as
+// a lazy `three` vendor chunk in vite.config.ts and only loads on the 3D toggle.
+import {
+  Vector2,
+  Vector3,
+  Scene,
+  Color,
+  PerspectiveCamera,
+  WebGLRenderer,
+  AmbientLight,
+  DirectionalLight,
+  GridHelper,
+  Group,
+  Raycaster,
+  CylinderGeometry,
+  SphereGeometry,
+  MeshStandardMaterial,
+  Mesh,
+  type ColorRepresentation,
+  type Material,
+} from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { useNetworkStore } from '../store/networkStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -15,8 +38,8 @@ interface MapInfo {
 }
 
 /** Map a node (x, y plan; z depth) to three-space (x, depth->Y up, y->Z). */
-function mapNode(n: VentNode, m: MapInfo): THREE.Vector3 {
-  return new THREE.Vector3(
+function mapNode(n: VentNode, m: MapInfo): Vector3 {
+  return new Vector3(
     (n.x - m.cx) * m.scale,
     (n.z - m.cz) * m.scale, // depth: more negative z => lower
     (n.y - m.cy) * m.scale,
@@ -40,15 +63,15 @@ function computeMap(network: VentNetwork): MapInfo {
   };
 }
 
-function cylinderBetween(a: THREE.Vector3, b: THREE.Vector3, radius: number, color: THREE.ColorRepresentation) {
-  const dir = new THREE.Vector3().subVectors(b, a);
+function cylinderBetween(a: Vector3, b: Vector3, radius: number, color: ColorRepresentation) {
+  const dir = new Vector3().subVectors(b, a);
   const len = dir.length() || 0.0001;
-  const geom = new THREE.CylinderGeometry(radius, radius, len, 12);
-  const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.1 });
-  const mesh = new THREE.Mesh(geom, mat);
-  mesh.position.copy(new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5));
+  const geom = new CylinderGeometry(radius, radius, len, 12);
+  const mat = new MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.1 });
+  const mesh = new Mesh(geom, mat);
+  mesh.position.copy(new Vector3().addVectors(a, b).multiplyScalar(0.5));
   // orient default +Y axis to dir
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+  mesh.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), dir.clone().normalize());
   return mesh;
 }
 
@@ -64,12 +87,12 @@ export function View3D() {
   );
 
   const mountRef = useRef<HTMLDivElement>(null);
-  const sceneRef = useRef<THREE.Scene>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera>(null);
-  const rendererRef = useRef<THREE.WebGLRenderer>(null);
+  const sceneRef = useRef<Scene>(null);
+  const cameraRef = useRef<PerspectiveCamera>(null);
+  const rendererRef = useRef<WebGLRenderer>(null);
   const controlsRef = useRef<OrbitControls>(null);
-  const groupRef = useRef<THREE.Group>(null);
-  const raycaster = useRef(new THREE.Raycaster());
+  const groupRef = useRef<Group>(null);
+  const raycaster = useRef(new Raycaster());
   // latest data for the click handler (avoids stale closure)
   const dataRef = useRef({ network, result, display, setSelection });
   dataRef.current = { network, result, display, setSelection };
@@ -77,24 +100,24 @@ export function View3D() {
   // --- one-time scene setup ---
   useEffect(() => {
     const mount = mountRef.current!;
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf1f5f9);
-    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+    const scene = new Scene();
+    scene.background = new Color(0xf1f5f9);
+    const camera = new PerspectiveCamera(50, 1, 0.1, 1000);
     camera.position.set(0, 14, 26);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     mount.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+    scene.add(new AmbientLight(0xffffff, 0.7));
+    const dir = new DirectionalLight(0xffffff, 0.8);
     dir.position.set(10, 20, 15);
     scene.add(dir);
-    scene.add(new THREE.GridHelper(40, 20, 0xcbd5e1, 0xe2e8f0));
+    scene.add(new GridHelper(40, 20, 0xcbd5e1, 0xe2e8f0));
 
-    const group = new THREE.Group();
+    const group = new Group();
     scene.add(group);
 
     sceneRef.current = scene;
@@ -124,7 +147,7 @@ export function View3D() {
 
     const onClick = (e: MouseEvent) => {
       const rect = renderer.domElement.getBoundingClientRect();
-      const ndc = new THREE.Vector2(
+      const ndc = new Vector2(
         ((e.clientX - rect.left) / rect.width) * 2 - 1,
         -((e.clientY - rect.top) / rect.height) * 2 + 1,
       );
@@ -155,9 +178,9 @@ export function View3D() {
     // clear
     for (const child of [...group.children]) {
       group.remove(child);
-      const mesh = child as THREE.Mesh;
+      const mesh = child as Mesh;
       mesh.geometry?.dispose();
-      const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
+      const mat = mesh.material as Material | Material[] | undefined;
       if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
       else mat?.dispose();
     }
@@ -185,15 +208,15 @@ export function View3D() {
       pairSeen.set(key, seen + 1);
       const offsetIndex = seen - (count - 1) / 2;
       // perpendicular offset in the horizontal (X-Z) plane
-      const dirh = new THREE.Vector3(p2.x - p1.x, 0, p2.z - p1.z);
-      const perp = new THREE.Vector3(-dirh.z, 0, dirh.x).normalize().multiplyScalar(offsetIndex * 0.6);
+      const dirh = new Vector3(p2.x - p1.x, 0, p2.z - p1.z);
+      const perp = new Vector3(-dirh.z, 0, dirh.x).normalize().multiplyScalar(offsetIndex * 0.6);
       const a1 = p1.clone().add(perp);
       const a2 = p2.clone().add(perp);
 
       const res = resById.get(a.id);
       const selected = selection?.type === 'airway' && selection.id === a.id;
-      let color: THREE.ColorRepresentation = 0x94a3b8;
-      if (res && range) color = new THREE.Color(colorForValue(colorValue(display.primary.variable, res), range)).getHex();
+      let color: ColorRepresentation = 0x94a3b8;
+      if (res && range) color = new Color(colorForValue(colorValue(display.primary.variable, res), range)).getHex();
       if (selected) color = 0x0f172a;
       const cyl = cylinderBetween(a1, a2, selected ? 0.22 : 0.16, color);
       cyl.userData = { kind: 'airway', id: a.id };
@@ -205,9 +228,9 @@ export function View3D() {
       const selected = selection?.type === 'node' && selection.id === n.id;
       const fixed = n.fixedPressure != null;
       const color = selected ? 0x0f172a : fixed ? 0x38bdf8 : 0xffffff;
-      const geom = new THREE.SphereGeometry(selected ? 0.5 : 0.42, 20, 20);
-      const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.5 });
-      const sphere = new THREE.Mesh(geom, mat);
+      const geom = new SphereGeometry(selected ? 0.5 : 0.42, 20, 20);
+      const mat = new MeshStandardMaterial({ color, roughness: 0.5 });
+      const sphere = new Mesh(geom, mat);
       sphere.position.copy(p);
       sphere.userData = { kind: 'node', id: n.id };
       group.add(sphere);
