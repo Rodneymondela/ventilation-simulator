@@ -30,6 +30,28 @@ export function airwayResistance(a: Airway): number {
   return atkinsonResistance(a.frictionFactor, a.perimeter, a.length, a.area) + regulator;
 }
 
+/**
+ * Resistance adjusted from the reference air density to the airway's local
+ * operating density (Ventsim density-adjustment convention):
+ *
+ *   R_local = R_ref · (ρ_local / ρ_ref)
+ *
+ * because the Atkinson friction factor scales linearly with air density. The
+ * airway's own `airDensity` wins over the model-wide `operatingDensity`. When
+ * the airway is flagged `densityAdjusted`, its resistance is taken to already
+ * stand at local density and is returned unscaled.
+ */
+export function densityAdjustedResistance(
+  a: Airway,
+  referenceDensity: number,
+  operatingDensity: number,
+): number {
+  const R = airwayResistance(a);
+  if (a.densityAdjusted || !(referenceDensity > 0)) return R;
+  const local = a.airDensity ?? operatingDensity;
+  return R * (local / referenceDensity);
+}
+
 /** Default Atkinson flow exponent: fully turbulent square law (p = R·Q²). */
 export const DEFAULT_FLOW_EXPONENT = 2;
 

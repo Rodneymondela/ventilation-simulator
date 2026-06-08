@@ -1,6 +1,7 @@
 export {
   atkinsonResistance,
   airwayResistance,
+  densityAdjustedResistance,
   squareLawDrop,
   pressureDrop,
   airwayExponent,

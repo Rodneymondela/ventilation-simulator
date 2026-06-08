@@ -1,10 +1,11 @@
-import type { VentNetwork, Stage } from '../model/types';
+import type { VentNetwork, Stage, SimSettings } from '../model/types';
 import type { SolveResult } from '../solver';
 
-/** Self-contained model document: the pooled network plus its stage list. */
+/** Self-contained model document: the pooled network, its stage list, and sim settings. */
 export interface ModelDoc {
   network: VentNetwork;
   stages?: Stage[];
+  simSettings?: SimSettings;
 }
 
 /** Trigger a browser download of `content` as `filename`. */
@@ -24,8 +25,17 @@ export function download(filename: string, content: string, mime = 'text/plain')
  * Serialize the full pooled network plus its stage list. Each node/airway keeps
  * its `stages` membership, so staging round-trips through save/open.
  */
-export function exportModelJson(network: VentNetwork, stages?: Stage[]): string {
-  const doc = { nodes: network.nodes, airways: network.airways, stages: stages ?? [] };
+export function exportModelJson(
+  network: VentNetwork,
+  stages?: Stage[],
+  simSettings?: SimSettings,
+): string {
+  const doc = {
+    nodes: network.nodes,
+    airways: network.airways,
+    stages: stages ?? [],
+    ...(simSettings ? { simSettings } : {}),
+  };
   return JSON.stringify(doc, null, 2);
 }
 
@@ -36,7 +46,11 @@ export function parseModelJson(text: string): ModelDoc {
     throw new Error('Not a valid model: expected { nodes: [], airways: [] }');
   }
   const stages = Array.isArray(data.stages) ? (data.stages as Stage[]) : undefined;
-  return { network: { nodes: data.nodes, airways: data.airways }, stages };
+  const simSettings =
+    data.simSettings && typeof data.simSettings === 'object'
+      ? (data.simSettings as SimSettings)
+      : undefined;
+  return { network: { nodes: data.nodes, airways: data.airways }, stages, simSettings };
 }
 
 function csvRow(values: (string | number)[]): string {

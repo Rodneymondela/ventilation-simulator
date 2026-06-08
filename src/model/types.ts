@@ -114,6 +114,19 @@ export interface Airway {
    * The regulator resistance (if any) is still added on top.
    */
   resistanceOverride?: number | null;
+  /**
+   * Operating air density in this airway, kg/m^3. When set it is used (instead
+   * of the model-wide operating density) both to adjust this airway's
+   * resistance away from the reference density and as the column density for
+   * natural ventilation pressure. Leave undefined to inherit the model setting.
+   */
+  airDensity?: number;
+  /**
+   * Ventsim "already density-adjusted" flag. When true the resistance is treated
+   * as already standing at local density, so the reference→local density scaling
+   * is skipped for this airway. NVP is unaffected by this flag.
+   */
+  densityAdjusted?: boolean;
 }
 
 export interface VentNetwork {
@@ -134,6 +147,36 @@ export interface Stage {
 
 /** Ventsim supports up to 24 stages in one model file. */
 export const MAX_STAGES = 24;
+
+/**
+ * Whole-model simulation settings (the Ventsim "simulation accuracy" /
+ * air-property settings). All values are EDITABLE — the density defaults follow
+ * the Ventsim 1.2 kg/m^3 reference convention but must be verified before any
+ * result is trusted for real engineering.
+ */
+export interface SimSettings {
+  /** Reference air density that friction factors / resistances are standardised to, kg/m^3. */
+  referenceDensity: number;
+  /** Model-wide operating (local) air density used where an airway sets none, kg/m^3. */
+  airDensity: number;
+  /** Natural ventilation pressure from air-density differences across depth. Default OFF. */
+  naturalVentilation: boolean;
+  /** Gravitational acceleration used for NVP, m/s^2. */
+  gravity: number;
+  /** Convergence tolerance on the largest loop flow correction, m^3/s. */
+  tolerance: number;
+  /** Maximum solver iterations. */
+  maxIterations: number;
+}
+
+export const DEFAULT_SIM_SETTINGS: SimSettings = {
+  referenceDensity: 1.2, // PLACEHOLDER reference (Ventsim convention) — verify against a primary source
+  airDensity: 1.2,
+  naturalVentilation: false,
+  gravity: 9.81,
+  tolerance: 1e-6,
+  maxIterations: 1000,
+};
 
 /**
  * Whether a node/airway is present in stage `stageId`. Undefined or empty

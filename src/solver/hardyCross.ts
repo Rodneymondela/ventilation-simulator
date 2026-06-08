@@ -1,5 +1,10 @@
 import type { VentNetwork, Fan } from '../model/types';
-import { airwayResistance, airwayExponent, pressureDrop, DEFAULT_FLOW_EXPONENT } from './resistance';
+import {
+  densityAdjustedResistance,
+  airwayExponent,
+  pressureDrop,
+  DEFAULT_FLOW_EXPONENT,
+} from './resistance';
 import { fanPressure, fanSlope, fanState, type FanState } from './fan';
 
 /**
@@ -37,6 +42,14 @@ export interface SolveOptions {
   tolerance?: number;
   /** Initial circulating flow assumed in each fundamental loop, m^3/s. */
   initialFlow?: number;
+  /** Reference air density resistances are standardised to, kg/m^3 (default 1.2). */
+  referenceDensity?: number;
+  /** Model-wide operating air density, kg/m^3 (defaults to referenceDensity → no adjustment). */
+  airDensity?: number;
+  /** Include natural ventilation pressure from air-density differences across depth. Default false. */
+  naturalVentilation?: boolean;
+  /** Gravitational acceleration for NVP, m/s^2 (default 9.81). */
+  gravity?: number;
 }
 
 export interface AirwayResult {
@@ -87,6 +100,8 @@ interface Branch {
   fan: Fan | null;
   /** Constant pressure source in the from->to direction, Pa (boundary branches). */
   pressureSource: number;
+  /** Natural ventilation pressure in the from->to direction, Pa (0 when NVP off). */
+  nvpSource: number;
   area: number;
   airwayId: string;
   /** Virtual boundary branch — excluded from reported results. */
@@ -104,6 +119,11 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
   const maxIterations = options.maxIterations ?? 500;
   const tolerance = options.tolerance ?? 1e-6;
   const initialFlow = options.initialFlow ?? 1;
+  const referenceDensity = options.referenceDensity ?? 1.2;
+  // No model-wide operating density given → assume reference (factor 1, NVP columns at ρ_ref).
+  const operatingDensity = options.airDensity ?? referenceDensity;
+  const naturalVentilation = options.naturalVentilation ?? false;
+  const gravity = options.gravity ?? 9.81;
 
   const nodeIndex = new Map<string, number>();
   network.nodes.forEach((n, i) => nodeIndex.set(n.id, i));
@@ -114,13 +134,22 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
     if (from === undefined || to === undefined) {
       throw new Error(`Airway ${a.id} references an unknown node (${a.from} -> ${a.to})`);
     }
+    // NVP: a column of air of density ρ gains static pressure going DEEPER (z is
+    // depth, positive downward), so the from->to source is ρ·g·(z_to − z_from).
+    // With uniform density this sums to zero around any closed loop (correct);
+    // it only drives flow when intake/return densities differ.
+    const localDensity = a.airDensity ?? operatingDensity;
+    const nvpSource = naturalVentilation
+      ? localDensity * gravity * (network.nodes[to].z - network.nodes[from].z)
+      : 0;
     return {
       from,
       to,
-      R: airwayResistance(a),
+      R: densityAdjustedResistance(a, referenceDensity, operatingDensity),
       n: airwayExponent(a),
       fan: a.fan ?? null,
       pressureSource: 0,
+      nvpSource,
       area: a.area,
       airwayId: a.id,
       isVirtual: false,
@@ -149,6 +178,7 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
         n: DEFAULT_FLOW_EXPONENT, // irrelevant: R = 0, pressure comes from the source
         fan: null,
         pressureSource: n.fixedPressure as number,
+        nvpSource: 0,
         area: 0,
         airwayId: `__atm__${n.id}`,
         isVirtual: true,
@@ -232,7 +262,10 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
         const b = branches[branch];
         const q = Q[branch];
         const headLoss =
-          pressureDrop(b.R, q, b.n) - (b.fan ? fanPressure(b.fan, q) : 0) - b.pressureSource;
+          pressureDrop(b.R, q, b.n) -
+          (b.fan ? fanPressure(b.fan, q) : 0) -
+          b.pressureSource -
+          b.nvpSource;
         numerator += dir * headLoss;
         const slope = b.fan ? fanSlope(b.fan, q) : 0;
         // d/dq [ R·|q|^(n-1)·q ] = n·R·|q|^(n-1)

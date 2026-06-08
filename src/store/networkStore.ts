@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { VentNetwork, VentNode, Airway, Fan, Stage } from '../model/types';
-import { stageView, inStage, MAX_STAGES } from '../model/types';
+import type { VentNetwork, VentNode, Airway, Fan, Stage, SimSettings } from '../model/types';
+import { stageView, inStage, MAX_STAGES, DEFAULT_SIM_SETTINGS } from '../model/types';
 import { createDemoNetwork } from '../model/demoNetwork';
 import { solveNetwork, solveContaminant, type SolveResult } from '../solver';
 import type { DisplaySetting } from '../display/variables';
@@ -30,6 +30,7 @@ interface PersistShape {
   stages: Stage[];
   activeStageId: string;
   display: DisplayState;
+  simSettings: SimSettings;
 }
 
 const STORAGE_KEY = 'ventsim.model.v2';
@@ -51,6 +52,7 @@ interface AppState {
   /** Whether the last solve's contaminant transport converged (null = not run). */
   contaminantConverged: boolean | null;
   display: DisplayState;
+  simSettings: SimSettings;
 
   // history (snapshots of the pooled network)
   past: VentNetwork[];
@@ -87,9 +89,12 @@ interface AppState {
   setPrimaryDisplay: (d: DisplaySetting) => void;
   setSecondaryDisplay: (d: DisplaySetting) => void;
 
+  // --- simulation settings
+  setSimSettings: (patch: Partial<SimSettings>) => void;
+
   // --- model lifecycle
   newModel: () => void;
-  loadModel: (network: VentNetwork, stages?: Stage[]) => void;
+  loadModel: (network: VentNetwork, stages?: Stage[], simSettings?: SimSettings) => void;
 
   // --- stages
   addStage: () => void;
@@ -141,6 +146,7 @@ function freshModel(network: VentNetwork): PersistShape {
     stages: [stage],
     activeStageId: stage.id,
     display: defaultDisplay,
+    simSettings: { ...DEFAULT_SIM_SETTINGS },
   };
 }
 
@@ -150,7 +156,10 @@ function loadPersisted(): PersistShape | null {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as PersistShape;
-      if (parsed.network?.nodes && parsed.stages?.length) return parsed;
+      if (parsed.network?.nodes && parsed.stages?.length) {
+        // simSettings was added after v2 shipped — backfill defaults if absent.
+        return { ...parsed, simSettings: { ...DEFAULT_SIM_SETTINGS, ...parsed.simSettings } };
+      }
     }
   } catch {
     /* fall through to migration / demo */
@@ -174,6 +183,7 @@ function loadPersisted(): PersistShape | null {
           stages: [stage],
           activeStageId: stage.id,
           display: old.display ?? defaultDisplay,
+          simSettings: { ...DEFAULT_SIM_SETTINGS },
         };
       }
     }
@@ -342,8 +352,16 @@ export const useNetworkStore = create<AppState>((set, get) => {
 
     runSolve: () => {
       const net = get().activeNetwork();
+      const s = get().simSettings;
       try {
-        const result = solveNetwork(net, { tolerance: 1e-6, maxIterations: 1000 });
+        const result = solveNetwork(net, {
+          tolerance: s.tolerance,
+          maxIterations: s.maxIterations,
+          referenceDensity: s.referenceDensity,
+          airDensity: s.airDensity,
+          naturalVentilation: s.naturalVentilation,
+          gravity: s.gravity,
+        });
         const hasContaminant = net.nodes.some(
           (n) => n.contaminantConcentration != null || n.contaminantInjection != null,
         );
@@ -365,6 +383,10 @@ export const useNetworkStore = create<AppState>((set, get) => {
     setPrimaryDisplay: (primary) => set({ display: { ...get().display, primary } }),
     setSecondaryDisplay: (secondary) => set({ display: { ...get().display, secondary } }),
 
+    // Changing a sim setting invalidates the current result (it must be re-solved).
+    setSimSettings: (patch) =>
+      set({ simSettings: { ...get().simSettings, ...patch }, resultStale: true }),
+
     newModel: () => {
       const stage: Stage = { id: uid('st'), name: 'Base' };
       set({
@@ -380,7 +402,7 @@ export const useNetworkStore = create<AppState>((set, get) => {
       });
     },
 
-    loadModel: (network, importedStages) => {
+    loadModel: (network, importedStages, importedSettings) => {
       // Use the imported stages if present; otherwise wrap everything in a Base stage.
       let stages: Stage[];
       let pool: VentNetwork;
@@ -396,6 +418,8 @@ export const useNetworkStore = create<AppState>((set, get) => {
         network: pool,
         stages,
         activeStageId: stages[0].id,
+        // Imported settings win; otherwise keep the current ones (back-fill missing keys).
+        simSettings: { ...DEFAULT_SIM_SETTINGS, ...get().simSettings, ...importedSettings },
         selection: null,
         result: null,
         resultStale: true,
@@ -516,6 +540,7 @@ useNetworkStore.subscribe((state) => {
     stages: state.stages,
     activeStageId: state.activeStageId,
     display: state.display,
+    simSettings: state.simSettings,
   };
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));

@@ -24,9 +24,13 @@ export function MenuBar() {
   const redo = useNetworkStore((s) => s.redo);
 
   const doSaveJson = () => {
-    // Save the full pool + stage list so staging round-trips.
-    const { network, stages } = useNetworkStore.getState();
-    download('ventilation-model.json', exportModelJson(network, stages), 'application/json');
+    // Save the full pool + stage list + sim settings so the model round-trips.
+    const { network, stages, simSettings } = useNetworkStore.getState();
+    download(
+      'ventilation-model.json',
+      exportModelJson(network, stages, simSettings),
+      'application/json',
+    );
   };
   const doNetworkCsv = () => {
     // CSV reflects the active stage (what is currently shown).
@@ -49,7 +53,7 @@ export function MenuBar() {
     reader.onload = () => {
       try {
         const doc = parseModelJson(String(reader.result));
-        loadModel(doc.network, doc.stages);
+        loadModel(doc.network, doc.stages, doc.simSettings);
       } catch (err) {
         alert(`Could not open model: ${err instanceof Error ? err.message : err}`);
       }
@@ -97,8 +101,9 @@ export function MenuBar() {
     },
   ];
 
-  // View / Tools / Settings shown as disabled placeholders to mirror the reference layout.
-  const placeholders = ['View', 'Tools', 'Settings'];
+  // View / Tools shown as disabled placeholders to mirror the reference layout.
+  // (Settings live in the header gear ⚙.)
+  const placeholders = ['View', 'Tools'];
 
   return (
     <div

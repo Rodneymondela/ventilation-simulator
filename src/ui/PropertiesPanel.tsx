@@ -269,6 +269,39 @@ function AirwayEditor({ airway }: { airway: Airway }) {
         n is the Atkinson exponent in p = R·Qⁿ (clamped 1–2): 2 = turbulent, ~1 = laminar.
       </p>
 
+      <div className="mt-1 space-y-1 border-t border-slate-100 pt-2">
+        <label className="flex items-center justify-between gap-2 text-sm">
+          <span className="text-slate-600">Override air density</span>
+          <input
+            type="checkbox"
+            checked={airway.airDensity != null}
+            onChange={(e) =>
+              updateAirway(airway.id, { airDensity: e.target.checked ? 1.2 : undefined })
+            }
+          />
+        </label>
+        {airway.airDensity != null && (
+          <Field
+            label="Air density ρ"
+            value={airway.airDensity}
+            step={0.01}
+            onChange={(v) => updateAirway(airway.id, { airDensity: v })}
+            suffix="kg/m³"
+          />
+        )}
+        <label className="flex items-center justify-between gap-2 text-sm">
+          <span className="text-slate-600">Already density-adjusted</span>
+          <input
+            type="checkbox"
+            checked={airway.densityAdjusted ?? false}
+            onChange={(e) => updateAirway(airway.id, { densityAdjusted: e.target.checked || undefined })}
+          />
+        </label>
+        <p className="text-[11px] text-slate-400">
+          R is scaled by ρ/ρ_ref unless already-adjusted. ρ also sets this airway's NVP column.
+        </p>
+      </div>
+
       <div className="rounded bg-slate-50 p-2 text-sm">
         <div className="flex justify-between">
           <span className="text-slate-500">Resistance R</span>
