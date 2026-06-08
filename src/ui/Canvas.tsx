@@ -46,26 +46,35 @@ function airwayPath(
   return { d, mid: { x: mx, y: my }, angle, perp: { x: px, y: py }, off };
 }
 
+const LABEL_LINE_H = 16;
+
 /**
- * Label placement for an airway. Single airways sit 12px above the midpoint
- * (textAnchor middle). Parallel branches are pushed outward along the curve's
- * bulge direction and anchored on the outer side so their (often long) labels
- * grow away from each other instead of overlapping on the shared centerline.
+ * Label placement for an airway. A single airway sits 12px above its midpoint
+ * (textAnchor middle). Parallel branches are stacked on a vertical ladder centred
+ * on the bundle's centerline midpoint — one label per row, {@link LABEL_LINE_H}px
+ * apart — so they never collide no matter how the bundle is oriented (the previous
+ * perpendicular-only nudge let 3+ same-side labels pile up on one baseline). Each
+ * label is also pushed toward its own branch's bulge side and anchored outward so
+ * the text grows away from the bundle rather than across it.
  */
 function airwayLabelPlacement(
-  mid: { x: number; y: number },
+  from: VentNode,
+  to: VentNode,
   perp: { x: number; y: number },
   off: number,
+  offsetIndex: number,
+  count: number,
 ): { x: number; y: number; anchor: 'start' | 'middle' | 'end' } {
-  if (off === 0) return { x: mid.x, y: mid.y - 12, anchor: 'middle' };
-  const dir = off > 0 ? 1 : -1;
-  const ux = perp.x * dir; // unit perpendicular pointing to this branch's bulge side
-  const uy = perp.y * dir;
-  const pad = 16;
-  const x = mid.x + ux * pad;
-  // keep text visually centered on its baseline; nudge down when pushed below the line
-  const y = mid.y + uy * pad + (uy > 0 ? 9 : 0);
-  const anchor: 'start' | 'middle' | 'end' = ux > 0.3 ? 'start' : ux < -0.3 ? 'end' : 'middle';
+  const cx = (from.x + to.x) / 2;
+  const cy = (from.y + to.y) / 2;
+  if (count <= 1) return { x: cx, y: cy - 12, anchor: 'middle' };
+  // Push toward this branch's bulge side (sign of off) and stack by offsetIndex.
+  const dir = off > 0 ? 1 : off < 0 ? -1 : 0;
+  const sideX = perp.x * dir; // horizontal component of the bulge side
+  const pad = 18;
+  const x = cx + sideX * pad;
+  const y = cy + offsetIndex * LABEL_LINE_H + 4; // +4 centres text on its baseline row
+  const anchor: 'start' | 'middle' | 'end' = sideX > 0.3 ? 'start' : sideX < -0.3 ? 'end' : 'middle';
   return { x, y, anchor };
 }
 
@@ -275,7 +284,7 @@ export function Canvas() {
         pairSeen.set(key, seen + 1);
         const offsetIndex = seen - (count - 1) / 2;
         const { d, mid, angle, perp, off } = airwayPath(from, to, offsetIndex);
-        const label = airwayLabelPlacement(mid, perp, off);
+        const label = airwayLabelPlacement(from, to, perp, off, offsetIndex, count);
 
         const res = resultById.get(a.id);
         const reversed = res ? res.Q < 0 : false;
