@@ -2,6 +2,7 @@ import { useNetworkStore } from '../store/networkStore';
 import { useShallow } from 'zustand/react/shallow';
 import { MAX_STAGES } from '../model/types';
 import { SimSettingsPanel } from './SimSettingsPanel';
+import { GlyphLayersPanel } from './GlyphLayersPanel';
 import {
   DISPLAY_VARIABLES,
   DISPLAY_VARIABLE_LIST,
@@ -157,6 +158,7 @@ export function HeaderBar() {
             </button>
           ))}
         </div>
+        <GlyphLayersPanel />
         <SimSettingsPanel />
       </div>
     </div>

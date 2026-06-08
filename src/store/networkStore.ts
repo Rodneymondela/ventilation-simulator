@@ -4,6 +4,7 @@ import { stageView, inStage, MAX_STAGES, DEFAULT_SIM_SETTINGS } from '../model/t
 import { createDemoNetwork } from '../model/demoNetwork';
 import { solveNetwork, solveContaminant, type SolveResult } from '../solver';
 import type { DisplaySetting } from '../display/variables';
+import { DEFAULT_GLYPHS, type GlyphKind } from '../display/glyphs';
 
 export type Tool = 'select' | 'addNode' | 'addAirway' | 'addFan' | 'addRegulator' | 'pan';
 
@@ -31,6 +32,7 @@ interface PersistShape {
   activeStageId: string;
   display: DisplayState;
   simSettings: SimSettings;
+  glyphs: Record<GlyphKind, boolean>;
 }
 
 const STORAGE_KEY = 'ventsim.model.v2';
@@ -53,6 +55,8 @@ interface AppState {
   contaminantConverged: boolean | null;
   display: DisplayState;
   simSettings: SimSettings;
+  /** Which status-glyph layers are visible on the canvas. */
+  glyphs: Record<GlyphKind, boolean>;
 
   // history (snapshots of the pooled network)
   past: VentNetwork[];
@@ -91,6 +95,9 @@ interface AppState {
 
   // --- simulation settings
   setSimSettings: (patch: Partial<SimSettings>) => void;
+
+  // --- glyph layers
+  toggleGlyph: (kind: GlyphKind) => void;
 
   // --- model lifecycle
   newModel: () => void;
@@ -147,6 +154,7 @@ function freshModel(network: VentNetwork): PersistShape {
     activeStageId: stage.id,
     display: defaultDisplay,
     simSettings: { ...DEFAULT_SIM_SETTINGS },
+    glyphs: { ...DEFAULT_GLYPHS },
   };
 }
 
@@ -157,8 +165,12 @@ function loadPersisted(): PersistShape | null {
     if (raw) {
       const parsed = JSON.parse(raw) as PersistShape;
       if (parsed.network?.nodes && parsed.stages?.length) {
-        // simSettings was added after v2 shipped — backfill defaults if absent.
-        return { ...parsed, simSettings: { ...DEFAULT_SIM_SETTINGS, ...parsed.simSettings } };
+        // simSettings / glyphs were added after v2 shipped — backfill defaults if absent.
+        return {
+          ...parsed,
+          simSettings: { ...DEFAULT_SIM_SETTINGS, ...parsed.simSettings },
+          glyphs: { ...DEFAULT_GLYPHS, ...parsed.glyphs },
+        };
       }
     }
   } catch {
@@ -184,6 +196,7 @@ function loadPersisted(): PersistShape | null {
           activeStageId: stage.id,
           display: old.display ?? defaultDisplay,
           simSettings: { ...DEFAULT_SIM_SETTINGS },
+          glyphs: { ...DEFAULT_GLYPHS },
         };
       }
     }
@@ -387,6 +400,10 @@ export const useNetworkStore = create<AppState>((set, get) => {
     setSimSettings: (patch) =>
       set({ simSettings: { ...get().simSettings, ...patch }, resultStale: true }),
 
+    // Pure view toggle — does not affect the solve.
+    toggleGlyph: (kind) =>
+      set({ glyphs: { ...get().glyphs, [kind]: !get().glyphs[kind] } }),
+
     newModel: () => {
       const stage: Stage = { id: uid('st'), name: 'Base' };
       set({
@@ -541,6 +558,7 @@ useNetworkStore.subscribe((state) => {
     activeStageId: state.activeStageId,
     display: state.display,
     simSettings: state.simSettings,
+    glyphs: state.glyphs,
   };
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));

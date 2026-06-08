@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { computeRange, colorForValue } from '../display/mapping';
 import { colorValue } from '../display/variables';
 import { FAN_STATE_STYLE } from '../display/fanStyle';
+import { CONTAMINANT_EPS } from '../display/glyphs';
 import type { Airway, VentNode } from '../model/types';
 
 interface View {
@@ -76,6 +77,7 @@ export function Canvas() {
     pendingFromNode,
     result,
     display,
+    glyphs,
     setSelection,
     addNode,
     addAirway,
@@ -92,6 +94,7 @@ export function Canvas() {
       pendingFromNode: s.pendingFromNode,
       result: s.result,
       display: s.display,
+      glyphs: s.glyphs,
       setSelection: s.setSelection,
       addNode: s.addNode,
       addAirway: s.addAirway,
@@ -281,6 +284,16 @@ export function Canvas() {
         // Fan glyph colour follows the solved operating state (blue until solved).
         const fanColor = res?.fanState ? FAN_STATE_STYLE[res.fanState].color : '#2563eb';
 
+        const blocked = a.blocked && glyphs.blocked;
+        const showFan = a.fan && glyphs.fan;
+        const showRegulator = (a.regulatorResistance ?? 0) > 0 && glyphs.regulator;
+        const showFixedFlow = a.fixedFlow != null && !a.blocked && glyphs.fixedFlow;
+        const contaminated =
+          glyphs.contaminant && res?.concentration != null && Math.abs(res.concentration) > CONTAMINANT_EPS;
+        // Secondary glyphs sit offset along the perpendicular so they clear the fan/regulator at mid.
+        const off1 = { x: mid.x + perp.x * 15, y: mid.y + perp.y * 15 };
+        const off2 = { x: mid.x - perp.x * 15, y: mid.y - perp.y * 15 };
+
         return (
           <g key={a.id} className="cursor-pointer" onClick={(e) => onAirwayClick(e, a)}>
             {/* fat invisible hit area */}
@@ -288,20 +301,21 @@ export function Canvas() {
             <path
               d={d}
               fill="none"
-              stroke={selected ? '#0f172a' : stroke}
+              stroke={selected ? '#0f172a' : blocked ? '#94a3b8' : stroke}
               strokeWidth={selected ? 6 : 4}
-              markerEnd={reversed ? undefined : 'url(#arrow)'}
-              markerStart={reversed ? 'url(#arrow)' : undefined}
+              strokeDasharray={blocked ? '6 5' : undefined}
+              markerEnd={reversed || blocked ? undefined : 'url(#arrow)'}
+              markerStart={reversed && !blocked ? 'url(#arrow)' : undefined}
             />
-            {a.fan && (
-              <circle cx={mid.x} cy={mid.y} r={7} fill="#fff" stroke={fanColor} strokeWidth={2} />
+            {showFan && (
+              <>
+                <circle cx={mid.x} cy={mid.y} r={7} fill="#fff" stroke={fanColor} strokeWidth={2} />
+                <text x={mid.x} y={mid.y + 3} textAnchor="middle" fontSize={9} fill={fanColor}>
+                  F
+                </text>
+              </>
             )}
-            {a.fan && (
-              <text x={mid.x} y={mid.y + 3} textAnchor="middle" fontSize={9} fill={fanColor}>
-                F
-              </text>
-            )}
-            {(a.regulatorResistance ?? 0) > 0 && (
+            {showRegulator && (
               <rect
                 x={mid.x - 6}
                 y={mid.y - 6}
@@ -312,6 +326,27 @@ export function Canvas() {
                 strokeWidth={2}
                 transform={`rotate(${angle} ${mid.x} ${mid.y})`}
               />
+            )}
+            {showFixedFlow && (
+              <>
+                <circle cx={off1.x} cy={off1.y} r={7} fill="#fff" stroke="#7c3aed" strokeWidth={2} />
+                <text x={off1.x} y={off1.y + 3.5} textAnchor="middle" fontSize={10} fill="#7c3aed">
+                  ⇶
+                </text>
+              </>
+            )}
+            {blocked && (
+              <>
+                <circle cx={mid.x} cy={mid.y} r={7} fill="#fff" stroke="#dc2626" strokeWidth={2} />
+                <path
+                  d={`M ${mid.x - 4} ${mid.y - 4} L ${mid.x + 4} ${mid.y + 4} M ${mid.x + 4} ${mid.y - 4} L ${mid.x - 4} ${mid.y + 4}`}
+                  stroke="#dc2626"
+                  strokeWidth={1.5}
+                />
+              </>
+            )}
+            {contaminated && (
+              <circle cx={off2.x} cy={off2.y} r={5} fill="#059669" stroke="#fff" strokeWidth={1.5} />
             )}
             <text x={label.x} y={label.y} textAnchor={label.anchor} fontSize={11} fill="#334155">
               {a.label ?? a.id}
@@ -324,7 +359,16 @@ export function Canvas() {
       {network.nodes.map((n) => {
         const selected = selection?.type === 'node' && selection.id === n.id;
         const pending = pendingFromNode === n.id;
-        const fixed = n.fixedPressure != null;
+        const fixed = n.fixedPressure != null && glyphs.fixedPressure;
+        // Contaminant "report" markers: a held concentration (0 = fresh-air report,
+        // >0 = contaminant source) or a mass-injection source.
+        const hasConc = n.contaminantConcentration != null;
+        const fresh = hasConc && (n.contaminantConcentration ?? 0) <= CONTAMINANT_EPS;
+        const source = hasConc && (n.contaminantConcentration ?? 0) > CONTAMINANT_EPS;
+        const injects = (n.contaminantInjection ?? 0) > CONTAMINANT_EPS;
+        const showContaminant = glyphs.contaminant && (hasConc || injects);
+        const bx = n.x + NODE_R * 0.8;
+        const by = n.y + NODE_R * 0.8;
         return (
           <g
             key={n.id}
@@ -339,6 +383,26 @@ export function Canvas() {
               stroke={selected ? '#0f172a' : pending ? '#16a34a' : '#475569'}
               strokeWidth={selected || pending ? 4 : 2}
             />
+            {fixed && (
+              <text x={n.x} y={n.y + 4} textAnchor="middle" fontSize={11} fontWeight="bold" fill="#0284c7">
+                P
+              </text>
+            )}
+            {showContaminant && (
+              <>
+                <circle
+                  cx={bx}
+                  cy={by}
+                  r={5.5}
+                  fill={source ? '#d97706' : fresh ? '#059669' : '#10b981'}
+                  stroke="#fff"
+                  strokeWidth={1.5}
+                />
+                <text x={bx} y={by + 3} textAnchor="middle" fontSize={8} fill="#fff" fontWeight="bold">
+                  {injects && !hasConc ? '+' : fresh ? '✓' : '!'}
+                </text>
+              </>
+            )}
             <text x={n.x} y={n.y - NODE_R - 4} textAnchor="middle" fontSize={11} fill="#0f172a">
               {n.label ?? n.id}
             </text>
