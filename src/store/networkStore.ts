@@ -232,6 +232,20 @@ export const useNetworkStore = create<AppState>((set, get) => {
     });
   }
 
+  // Memoised stage view: stageView() builds a NEW object each call, which would
+  // make the `activeNetwork()` selector return a fresh reference every render and
+  // send useShallow consumers into an infinite update loop. Cache on the (network,
+  // stageId) identity — `network` is replaced by reference on every edit.
+  let viewCache: { net: VentNetwork; stageId: string; view: VentNetwork } | null = null;
+  function activeNetworkMemo(): VentNetwork {
+    const net = get().network;
+    const stageId = get().activeStageId;
+    if (viewCache && viewCache.net === net && viewCache.stageId === stageId) return viewCache.view;
+    const view = stageView(net, stageId);
+    viewCache = { net, stageId, view };
+    return view;
+  }
+
   /** Replace the pooled network WITHOUT recording history (live drag). */
   function setPool(next: VentNetwork) {
     set({ network: next, resultStale: true });
@@ -251,7 +265,7 @@ export const useNetworkStore = create<AppState>((set, get) => {
     past: [],
     future: [],
 
-    activeNetwork: () => stageView(get().network, get().activeStageId),
+    activeNetwork: activeNetworkMemo,
     activeStage: () => {
       const { stages, activeStageId } = get();
       return stages.find((s) => s.id === activeStageId) ?? stages[0];
