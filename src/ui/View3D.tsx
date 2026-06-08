@@ -19,6 +19,7 @@ import {
   CylinderGeometry,
   SphereGeometry,
   MeshStandardMaterial,
+  MeshBasicMaterial,
   Mesh,
   type ColorRepresentation,
   type Material,
@@ -28,7 +29,12 @@ import { useNetworkStore } from '../store/networkStore';
 import { useShallow } from 'zustand/react/shallow';
 import { computeRange, colorForValue } from '../display/mapping';
 import { colorValue } from '../display/variables';
+import { FAN_STATE_STYLE } from '../display/fanStyle';
+import { CONTAMINANT_EPS } from '../display/glyphs';
 import type { VentNetwork, VentNode } from '../model/types';
+
+/** World up — status glyph markers stack along this above an airway midpoint. */
+const UP = new Vector3(0, 1, 0);
 
 interface MapInfo {
   cx: number;
@@ -75,16 +81,46 @@ function cylinderBetween(a: Vector3, b: Vector3, radius: number, color: ColorRep
   return mesh;
 }
 
+/**
+ * A flat-shaded status-glyph marker (3D counterpart of a 2D canvas glyph). Colour
+ * carries the meaning — it matches the GlyphLayersPanel legend swatch — so an
+ * unlit MeshBasicMaterial is used to keep the colour true regardless of lighting.
+ */
+function markerSphere(pos: Vector3, color: ColorRepresentation, radius: number, userData: object) {
+  const geom = new SphereGeometry(radius, 12, 12);
+  const mat = new MeshBasicMaterial({ color });
+  const mesh = new Mesh(geom, mat);
+  mesh.position.copy(pos);
+  mesh.userData = userData;
+  return mesh;
+}
+
+/** Translucent blue sleeve around an airway — the 3D "select same layer" halo. */
+function haloCylinder(a: Vector3, b: Vector3, radius: number, userData: object) {
+  const dir = new Vector3().subVectors(b, a);
+  const len = dir.length() || 0.0001;
+  const geom = new CylinderGeometry(radius, radius, len, 12);
+  const mat = new MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.3 });
+  const mesh = new Mesh(geom, mat);
+  mesh.position.copy(new Vector3().addVectors(a, b).multiplyScalar(0.5));
+  mesh.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), dir.clone().normalize());
+  mesh.userData = userData;
+  return mesh;
+}
+
 export function View3D() {
-  const { network, result, display, selection, setSelection } = useNetworkStore(
-    useShallow((s) => ({
-      network: s.activeNetwork(),
-      result: s.result,
-      display: s.display,
-      selection: s.selection,
-      setSelection: s.setSelection,
-    })),
-  );
+  const { network, result, display, selection, glyphs, selectedAirways, setSelection } =
+    useNetworkStore(
+      useShallow((s) => ({
+        network: s.activeNetwork(),
+        result: s.result,
+        display: s.display,
+        selection: s.selection,
+        glyphs: s.glyphs,
+        selectedAirways: s.selectedAirways,
+        setSelection: s.setSelection,
+      })),
+    );
 
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<Scene>(null);
@@ -198,6 +234,8 @@ export function View3D() {
       pairCount.set(key, (pairCount.get(key) ?? 0) + 1);
     }
 
+    const groupSet = new Set(selectedAirways); // "select same layer" highlight
+
     for (const a of network.airways) {
       const p1 = posById.get(a.from);
       const p2 = posById.get(a.to);
@@ -215,27 +253,60 @@ export function View3D() {
 
       const res = resById.get(a.id);
       const selected = selection?.type === 'airway' && selection.id === a.id;
+      const blocked = a.blocked && glyphs.blocked;
       let color: ColorRepresentation = 0x94a3b8;
       if (res && range) color = new Color(colorForValue(colorValue(display.primary.variable, res), range)).getHex();
+      if (blocked) color = 0x94a3b8; // sealed: render grey like the 2D canvas
       if (selected) color = 0x0f172a;
+      const ud = { kind: 'airway' as const, id: a.id };
+      if (groupSet.has(a.id)) group.add(haloCylinder(a1, a2, selected ? 0.34 : 0.28, ud));
       const cyl = cylinderBetween(a1, a2, selected ? 0.22 : 0.16, color);
-      cyl.userData = { kind: 'airway', id: a.id };
+      cyl.userData = ud;
       group.add(cyl);
+
+      // Status-glyph markers, stacked above the airway midpoint. Colours mirror
+      // the 2D canvas / GlyphLayersPanel legend so the two views read alike.
+      const mid = new Vector3().addVectors(a1, a2).multiplyScalar(0.5);
+      const markers: ColorRepresentation[] = [];
+      if (a.fan && glyphs.fan) {
+        markers.push(res?.fanState ? new Color(FAN_STATE_STYLE[res.fanState].color).getHex() : 0x2563eb);
+      }
+      if ((a.regulatorResistance ?? 0) > 0 && glyphs.regulator) markers.push(0xb45309);
+      if (a.fixedFlow != null && !a.blocked && glyphs.fixedFlow) markers.push(0x7c3aed);
+      if (blocked) markers.push(0xdc2626);
+      if (glyphs.contaminant && res?.concentration != null && Math.abs(res.concentration) > CONTAMINANT_EPS) {
+        markers.push(0x059669);
+      }
+      markers.forEach((c, i) => {
+        group.add(markerSphere(mid.clone().addScaledVector(UP, 0.55 + i * 0.42), c, 0.16, ud));
+      });
     }
 
     for (const n of network.nodes) {
       const p = posById.get(n.id)!;
       const selected = selection?.type === 'node' && selection.id === n.id;
-      const fixed = n.fixedPressure != null;
+      const fixed = n.fixedPressure != null && glyphs.fixedPressure;
       const color = selected ? 0x0f172a : fixed ? 0x38bdf8 : 0xffffff;
       const geom = new SphereGeometry(selected ? 0.5 : 0.42, 20, 20);
       const mat = new MeshStandardMaterial({ color, roughness: 0.5 });
       const sphere = new Mesh(geom, mat);
       sphere.position.copy(p);
-      sphere.userData = { kind: 'node', id: n.id };
+      const ud = { kind: 'node' as const, id: n.id };
+      sphere.userData = ud;
       group.add(sphere);
+
+      // Contaminant "report" marker above the node: orange = held source,
+      // green = fresh (held 0), light-green = injection. Matches the 2D badge.
+      const hasConc = n.contaminantConcentration != null;
+      const fresh = hasConc && (n.contaminantConcentration ?? 0) <= CONTAMINANT_EPS;
+      const source = hasConc && (n.contaminantConcentration ?? 0) > CONTAMINANT_EPS;
+      const injects = (n.contaminantInjection ?? 0) > CONTAMINANT_EPS;
+      if (glyphs.contaminant && (hasConc || injects)) {
+        const c = source ? 0xd97706 : fresh ? 0x059669 : 0x10b981;
+        group.add(markerSphere(p.clone().addScaledVector(UP, 0.78), c, 0.2, ud));
+      }
     }
-  }, [network, result, display, selection]);
+  }, [network, result, display, selection, glyphs, selectedAirways]);
 
   return <div ref={mountRef} className="h-full w-full" />;
 }
