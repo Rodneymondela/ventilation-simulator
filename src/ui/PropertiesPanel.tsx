@@ -2,6 +2,7 @@ import { useNetworkStore } from '../store/networkStore';
 import { useShallow } from 'zustand/react/shallow';
 import { airwayResistance } from '../solver';
 import { FAN_STATE_STYLE } from '../display/fanStyle';
+import { DISPLAY_VARIABLES } from '../display/variables';
 import type { Airway, Fan, VentNode } from '../model/types';
 
 function Field({
@@ -229,9 +230,17 @@ function StagesEditor({ airway }: { airway: Airway }) {
 }
 
 function AirwayEditor({ airway }: { airway: Airway }) {
-  const { updateAirway, setFan, result } = useNetworkStore(
-    useShallow((s) => ({ updateAirway: s.updateAirway, setFan: s.setFan, result: s.result })),
-  );
+  const { updateAirway, setFan, result, display, selectSameLayer, selectedAirways } =
+    useNetworkStore(
+      useShallow((s) => ({
+        updateAirway: s.updateAirway,
+        setFan: s.setFan,
+        result: s.result,
+        display: s.display,
+        selectSameLayer: s.selectSameLayer,
+        selectedAirways: s.selectedAirways,
+      })),
+    );
   const R = airwayResistance(airway);
   const res = result?.airwayResults.find((r) => r.airwayId === airway.id);
 
@@ -400,6 +409,38 @@ function AirwayEditor({ airway }: { airway: Airway }) {
           + add fan to this airway
         </button>
       )}
+
+      <div className="mt-2 rounded border border-slate-200 bg-slate-50 p-2">
+        <div className="mb-1 text-sm font-medium text-slate-600">Select airways with the same…</div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            disabled={!result}
+            className="flex-1 rounded border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-40"
+            onClick={() => selectSameLayer('primary')}
+          >
+            Primary ({DISPLAY_VARIABLES[display.primary.variable].label})
+          </button>
+          <button
+            type="button"
+            disabled={!result}
+            className="flex-1 rounded border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-40"
+            onClick={() => selectSameLayer('secondary')}
+          >
+            Secondary ({DISPLAY_VARIABLES[display.secondary.variable].label})
+          </button>
+        </div>
+        {result ? (
+          selectedAirways.length > 0 && (
+            <p className="mt-1 text-[11px] text-blue-600">
+              {selectedAirways.length} airway{selectedAirways.length === 1 ? '' : 's'} highlighted
+              (matching the displayed value).
+            </p>
+          )
+        ) : (
+          <p className="mt-1 text-[11px] text-slate-400">Run a solve to enable.</p>
+        )}
+      </div>
 
       <StagesEditor airway={airway} />
     </div>

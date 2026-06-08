@@ -3,17 +3,26 @@ import { useShallow } from 'zustand/react/shallow';
 import { FAN_STATE_STYLE } from '../display/fanStyle';
 
 export function ResultsTable() {
-  const { result, solveError, resultStale, contaminantConverged, setSelection, selection } =
-    useNetworkStore(
-      useShallow((s) => ({
-        result: s.result,
-        solveError: s.solveError,
-        resultStale: s.resultStale,
-        contaminantConverged: s.contaminantConverged,
-        setSelection: s.setSelection,
-        selection: s.selection,
-      })),
-    );
+  const {
+    result,
+    solveError,
+    resultStale,
+    contaminantConverged,
+    setSelection,
+    selection,
+    selectedAirways,
+  } = useNetworkStore(
+    useShallow((s) => ({
+      result: s.result,
+      solveError: s.solveError,
+      resultStale: s.resultStale,
+      contaminantConverged: s.contaminantConverged,
+      setSelection: s.setSelection,
+      selection: s.selection,
+      selectedAirways: s.selectedAirways,
+    })),
+  );
+  const group = new Set(selectedAirways);
 
   return (
     <div className="flex h-full flex-col">
@@ -56,7 +65,7 @@ export function ResultsTable() {
                   key={r.airwayId}
                   onClick={() => setSelection({ type: 'airway', id: r.airwayId })}
                   className={`cursor-pointer border-b border-slate-100 hover:bg-slate-50 ${
-                    sel ? 'bg-blue-50' : ''
+                    sel ? 'bg-blue-100' : group.has(r.airwayId) ? 'bg-blue-50' : ''
                   } ${r.blocked ? 'text-slate-400' : ''}`}
                 >
                   <td className="px-3 py-1">{r.airwayId}</td>

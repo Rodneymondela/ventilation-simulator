@@ -3,7 +3,7 @@ import type { VentNetwork, VentNode, Airway, Fan, Stage, SimSettings } from '../
 import { stageView, inStage, MAX_STAGES, DEFAULT_SIM_SETTINGS } from '../model/types';
 import { createDemoNetwork } from '../model/demoNetwork';
 import { solveNetwork, solveContaminant, type SolveResult } from '../solver';
-import type { DisplaySetting } from '../display/variables';
+import { formatValue, type DisplaySetting } from '../display/variables';
 import { DEFAULT_GLYPHS, type GlyphKind } from '../display/glyphs';
 
 export type Tool = 'select' | 'addNode' | 'addAirway' | 'addFan' | 'addRegulator' | 'pan';
@@ -44,6 +44,8 @@ interface AppState {
   stages: Stage[];
   activeStageId: string;
   selection: Selection;
+  /** Airway ids highlighted as a group by the "select same layer" helper. */
+  selectedAirways: string[];
   tool: Tool;
   viewMode: ViewMode;
   /** First node chosen while drawing an airway (addAirway tool). */
@@ -72,6 +74,8 @@ interface AppState {
   setViewMode: (mode: ViewMode) => void;
   setSelection: (s: Selection) => void;
   setPendingFromNode: (id: string | null) => void;
+  /** Select every airway sharing the selected airway's primary/secondary layer value. */
+  selectSameLayer: (which: 'primary' | 'secondary') => void;
 
   // --- editing (history-tracked, operate on the pool)
   addNode: (x: number, y: number) => void;
@@ -236,6 +240,7 @@ export const useNetworkStore = create<AppState>((set, get) => {
   return {
     ...init,
     selection: null,
+    selectedAirways: [],
     tool: 'select',
     viewMode: '2d',
     pendingFromNode: null,
@@ -254,8 +259,24 @@ export const useNetworkStore = create<AppState>((set, get) => {
 
     setTool: (tool) => set({ tool, pendingFromNode: null }),
     setViewMode: (viewMode) => set({ viewMode }),
-    setSelection: (selection) => set({ selection }),
+    // Picking a different element clears any "select same" group highlight.
+    setSelection: (selection) => set({ selection, selectedAirways: [] }),
     setPendingFromNode: (id) => set({ pendingFromNode: id }),
+
+    selectSameLayer: (which) => {
+      const { selection, result, display } = get();
+      if (selection?.type !== 'airway' || !result) return;
+      const setting = which === 'primary' ? display.primary : display.secondary;
+      const anchor = result.airwayResults.find((r) => r.airwayId === selection.id);
+      if (!anchor) return;
+      // Match on the value as DISPLAYED (unit + decimals), so "same" means what the
+      // user sees in that layer rather than a brittle float comparison.
+      const key = formatValue(setting, anchor);
+      const ids = result.airwayResults
+        .filter((r) => formatValue(setting, r) === key)
+        .map((r) => r.airwayId);
+      set({ selectedAirways: ids });
+    },
 
     addNode: (x, y) => {
       const { network, activeStageId } = get();
@@ -263,7 +284,7 @@ export const useNetworkStore = create<AppState>((set, get) => {
       const id = uniqueId(ids, 'N');
       const node: VentNode = { id, label: id, x, y, z: 0, stages: [activeStageId] };
       commit({ ...network, nodes: [...network.nodes, node] });
-      set({ selection: { type: 'node', id } });
+      set({ selection: { type: 'node', id }, selectedAirways: [] });
     },
 
     addAirway: (fromId, toId) => {
@@ -284,7 +305,7 @@ export const useNetworkStore = create<AppState>((set, get) => {
         stages: [activeStageId],
       };
       commit({ ...network, airways: [...network.airways, airway] });
-      set({ selection: { type: 'airway', id }, pendingFromNode: null });
+      set({ selection: { type: 'airway', id }, pendingFromNode: null, selectedAirways: [] });
     },
 
     updateNode: (id, patch) => {
@@ -348,7 +369,7 @@ export const useNetworkStore = create<AppState>((set, get) => {
           .filter((a) => !(a.id === selection.id && (a.stages?.length ?? 0) === 0));
         commit({ ...network, airways });
       }
-      set({ selection: null });
+      set({ selection: null, selectedAirways: [] });
     },
 
     beginHistory: () => {
@@ -387,7 +408,7 @@ export const useNetworkStore = create<AppState>((set, get) => {
             concentration: c.airwayConcentration[r.airwayId] ?? 0,
           }));
         }
-        set({ result, resultStale: false, solveError: null, contaminantConverged });
+        set({ result, resultStale: false, solveError: null, contaminantConverged, selectedAirways: [] });
       } catch (err) {
         set({ solveError: err instanceof Error ? err.message : String(err), result: null });
       }
@@ -411,6 +432,7 @@ export const useNetworkStore = create<AppState>((set, get) => {
         stages: [stage],
         activeStageId: stage.id,
         selection: null,
+        selectedAirways: [],
         result: null,
         resultStale: true,
         solveError: null,
@@ -438,6 +460,7 @@ export const useNetworkStore = create<AppState>((set, get) => {
         // Imported settings win; otherwise keep the current ones (back-fill missing keys).
         simSettings: { ...DEFAULT_SIM_SETTINGS, ...get().simSettings, ...importedSettings },
         selection: null,
+        selectedAirways: [],
         result: null,
         resultStale: true,
         solveError: null,
@@ -456,6 +479,7 @@ export const useNetworkStore = create<AppState>((set, get) => {
         stages: [...stages, stage],
         activeStageId: stage.id,
         selection: null,
+        selectedAirways: [],
         result: null,
         resultStale: true,
         past: [],
@@ -483,6 +507,7 @@ export const useNetworkStore = create<AppState>((set, get) => {
         stages: [...stages, stage],
         activeStageId: stage.id,
         selection: null,
+        selectedAirways: [],
         result: null,
         resultStale: true,
         past: [],
@@ -494,6 +519,7 @@ export const useNetworkStore = create<AppState>((set, get) => {
       set({
         activeStageId: id,
         selection: null,
+        selectedAirways: [],
         past: [],
         future: [],
         result: null, // no auto-resim on stage switch — require an explicit solve
@@ -525,6 +551,7 @@ export const useNetworkStore = create<AppState>((set, get) => {
         stages: remaining,
         activeStageId: activeStageId === id ? remainingIds[0] : activeStageId,
         selection: null,
+        selectedAirways: [],
         result: null,
         resultStale: true,
         past: [],

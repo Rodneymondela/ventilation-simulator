@@ -78,6 +78,7 @@ export function Canvas() {
     result,
     display,
     glyphs,
+    selectedAirways,
     setSelection,
     addNode,
     addAirway,
@@ -95,6 +96,7 @@ export function Canvas() {
       result: s.result,
       display: s.display,
       glyphs: s.glyphs,
+      selectedAirways: s.selectedAirways,
       setSelection: s.setSelection,
       addNode: s.addNode,
       addAirway: s.addAirway,
@@ -126,6 +128,7 @@ export function Canvas() {
 
   const range = result ? computeRange(result.airwayResults, display.primary.variable) : null;
   const resultById = new Map((result?.airwayResults ?? []).map((r) => [r.airwayId, r]));
+  const group = new Set(selectedAirways);
 
   const toSvg = useCallback(
     (clientX: number, clientY: number) => {
@@ -298,6 +301,10 @@ export function Canvas() {
           <g key={a.id} className="cursor-pointer" onClick={(e) => onAirwayClick(e, a)}>
             {/* fat invisible hit area */}
             <path d={d} fill="none" stroke="transparent" strokeWidth={16} />
+            {/* "select same layer" group halo */}
+            {group.has(a.id) && (
+              <path d={d} fill="none" stroke="#3b82f6" strokeWidth={11} strokeOpacity={0.35} />
+            )}
             <path
               d={d}
               fill="none"
