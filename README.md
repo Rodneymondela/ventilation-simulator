@@ -1,5 +1,8 @@
 # Mine Ventilation Network Simulator
 
+[![CI](https://github.com/Rodneymondela/ventilation-simulator/actions/workflows/ci.yml/badge.svg)](https://github.com/Rodneymondela/ventilation-simulator/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 An interactive mine ventilation network simulator (web app), inspired by desktop
 tools like Ventsim DESIGN. Build a network of nodes and airways, assign airway
 and fan properties, run a steady-state solve, and visualise airflow, velocity and
