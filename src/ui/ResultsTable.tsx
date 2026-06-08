@@ -45,6 +45,7 @@ export function ResultsTable() {
               <th className="px-3 py-1 text-right font-medium">Δp (Pa)</th>
               <th className="px-3 py-1 text-right font-medium">Fan (Pa)</th>
               <th className="px-3 py-1 text-left font-medium">Fan state</th>
+              <th className="px-3 py-1 text-left font-medium">Status</th>
             </tr>
           </thead>
           <tbody>
@@ -56,7 +57,7 @@ export function ResultsTable() {
                   onClick={() => setSelection({ type: 'airway', id: r.airwayId })}
                   className={`cursor-pointer border-b border-slate-100 hover:bg-slate-50 ${
                     sel ? 'bg-blue-50' : ''
-                  }`}
+                  } ${r.blocked ? 'text-slate-400' : ''}`}
                 >
                   <td className="px-3 py-1">{r.airwayId}</td>
                   <td className="px-3 py-1 text-right font-mono">{r.R.toFixed(4)}</td>
@@ -75,12 +76,27 @@ export function ResultsTable() {
                       <span className="text-slate-300">—</span>
                     )}
                   </td>
+                  <td className="px-3 py-1 whitespace-nowrap">
+                    {r.blocked && <span className="font-medium text-slate-500">⛔ blocked</span>}
+                    {r.fixedFlow && (
+                      <span className="font-medium text-violet-600">
+                        ⇶ fixed
+                        {r.fixedFlowPressure != null && (
+                          <span className="ml-1 font-mono text-xs text-slate-500">
+                            ({r.fixedFlowPressure >= 0 ? '+' : ''}
+                            {r.fixedFlowPressure.toFixed(0)} Pa)
+                          </span>
+                        )}
+                      </span>
+                    )}
+                    {!r.blocked && !r.fixedFlow && <span className="text-slate-300">—</span>}
+                  </td>
                 </tr>
               );
             })}
             {!result && (
               <tr>
-                <td colSpan={7} className="px-3 py-4 text-center text-slate-400">
+                <td colSpan={8} className="px-3 py-4 text-center text-slate-400">
                   Build a network and run a solve to see per-airway results.
                 </td>
               </tr>

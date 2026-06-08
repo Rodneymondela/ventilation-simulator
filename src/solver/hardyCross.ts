@@ -66,6 +66,16 @@ export interface AirwayResult {
   fanPressure: number;
   /** Operating state of this airway's fan, or undefined if there is no fan. */
   fanState?: FanState;
+  /** True if this airway is blocked (sealed): excluded from the solve, Q = 0. */
+  blocked?: boolean;
+  /** True if this airway's flow was held to a fixed value by a flow controller. */
+  fixedFlow?: boolean;
+  /**
+   * For a fixed-flow airway, the pressure the controller must supply in the
+   * from->to direction to hold the set flow (Pa). Positive = booster (adds
+   * pressure), negative = regulator/throttle (absorbs pressure).
+   */
+  fixedFlowPressure?: number;
   /**
    * Contaminant concentration carried by this airway (upstream node value),
    * arbitrary units. Populated only when a contaminant solve has run.
@@ -106,11 +116,25 @@ interface Branch {
   airwayId: string;
   /** Virtual boundary branch — excluded from reported results. */
   isVirtual: boolean;
+  /** Sealed airway: excluded from the graph, carries no flow. */
+  blocked: boolean;
+  /** Held flow in the from->to direction, m^3/s, or null if free. */
+  fixedFlow: number | null;
 }
 
 interface LoopMember {
   branch: number;
   dir: 1 | -1;
+}
+
+interface Loop {
+  members: LoopMember[];
+  /** Chord branch index this fundamental loop is built around. */
+  chord: number;
+  /** A frozen loop holds a fixed-flow chord and is never corrected. */
+  frozen: boolean;
+  /** Circulating flow seeded into the loop (the held flow for a frozen loop). */
+  current: number;
 }
 
 const DENOM_FLOOR = 1e-9;
@@ -142,6 +166,7 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
     const nvpSource = naturalVentilation
       ? localDensity * gravity * (network.nodes[to].z - network.nodes[from].z)
       : 0;
+    const blocked = a.blocked ?? false;
     return {
       from,
       to,
@@ -153,6 +178,9 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
       area: a.area,
       airwayId: a.id,
       isVirtual: false,
+      blocked,
+      // A blocked airway carries no flow at all, so blocking wins over a fixed flow.
+      fixedFlow: !blocked && a.fixedFlow != null ? a.fixedFlow : null,
     };
   });
 
@@ -182,16 +210,25 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
         area: 0,
         airwayId: `__atm__${n.id}`,
         isVirtual: true,
+        blocked: false,
+        fixedFlow: null,
       });
     }
   }
 
   const nBranches = branches.length;
 
-  // --- Spanning forest via BFS; non-tree branches are chords (one loop each).
+  // --- Spanning forest via BFS over FREE branches only (blocked branches carry
+  //     no flow; fixed-flow branches are forced to be chords so each gets its own
+  //     fundamental loop that we can freeze at the held flow). A chord appears in
+  //     exactly one fundamental loop, so freezing that loop pins the chord's flow
+  //     while the rest of the network still balances pressure normally.
+  const treeEligible = (i: number) => !branches[i].blocked && branches[i].fixedFlow === null;
+
   const parentNode = new Array<number>(nNodes).fill(-1);
   const parentBranch = new Array<number>(nNodes).fill(-1);
   const depth = new Array<number>(nNodes).fill(0);
+  const component = new Array<number>(nNodes).fill(-1);
   const visited = new Array<boolean>(nNodes).fill(false);
   const isTreeBranch = new Array<boolean>(nBranches).fill(false);
 
@@ -200,19 +237,24 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
     () => [],
   );
   branches.forEach((b, i) => {
+    if (!treeEligible(i)) return; // blocked / fixed-flow branches do not span the tree
     adj[b.from].push({ other: b.to, branch: i });
     adj[b.to].push({ other: b.from, branch: i });
   });
 
+  let nextComponent = 0;
   for (let start = 0; start < nNodes; start++) {
     if (visited[start]) continue;
+    const comp = nextComponent++;
     visited[start] = true;
+    component[start] = comp;
     const queue = [start];
     while (queue.length > 0) {
       const u = queue.shift()!;
       for (const { other, branch } of adj[u]) {
         if (!visited[other]) {
           visited[other] = true;
+          component[other] = comp;
           parentNode[other] = u;
           parentBranch[other] = branch;
           depth[other] = depth[u] + 1;
@@ -223,11 +265,22 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
     }
   }
 
-  // --- Build fundamental loops, one per chord.
-  const loops: LoopMember[][] = [];
+  // --- Build fundamental loops, one per chord (free chords + every fixed-flow branch).
+  const loops: Loop[] = [];
   for (let ci = 0; ci < nBranches; ci++) {
-    if (isTreeBranch[ci]) continue;
+    if (branches[ci].blocked || isTreeBranch[ci]) continue;
     const chord = branches[ci];
+    if (component[chord.from] !== component[chord.to]) {
+      // The only path between its endpoints is itself (a bridge). A fixed-flow
+      // bridge cannot be balanced as an independent loop; report it honestly.
+      if (chord.fixedFlow !== null) {
+        throw new Error(
+          `Airway ${chord.airwayId}: cannot fix the flow on a branch that is the only ` +
+            `connection between its nodes (no surrounding circuit to balance it).`,
+        );
+      }
+      continue; // (shouldn't happen for a free branch — BFS would have used it)
+    }
     const member: LoopMember[] = [{ branch: ci, dir: 1 }];
     const pathNodes = treePathNodes(chord.to, chord.from, parentNode, depth);
     for (let i = 0; i < pathNodes.length - 1; i++) {
@@ -237,28 +290,33 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
       const b = branches[bIdx];
       member.push({ branch: bIdx, dir: b.from === x && b.to === y ? 1 : -1 });
     }
-    loops.push(member);
+    const frozen = chord.fixedFlow !== null;
+    loops.push({ members: member, chord: ci, frozen, current: frozen ? chord.fixedFlow! : initialFlow });
   }
 
-  // --- Initial flows: superpose a circulation on each loop (preserves KCL).
+  const freeLoops = loops.filter((l) => !l.frozen);
+
+  // --- Initial flows: superpose each loop's circulation (preserves KCL). A frozen
+  //     loop seeds its held flow; since its chord rides only this loop (dir +1),
+  //     the chord flow stays exactly that value because the loop is never corrected.
   const Q = new Array<number>(nBranches).fill(0);
   for (const loop of loops) {
-    for (const { branch, dir } of loop) {
-      Q[branch] += dir * initialFlow;
+    for (const { branch, dir } of loop.members) {
+      Q[branch] += dir * loop.current;
     }
   }
 
-  // --- Iterate.
+  // --- Iterate the free loops only.
   let iterations = 0;
   let residual = 0;
-  let converged = loops.length === 0;
-  for (let iter = 0; iter < maxIterations; iter++) {
+  let converged = freeLoops.length === 0;
+  for (let iter = 0; iter < maxIterations && freeLoops.length > 0; iter++) {
     iterations = iter + 1;
     let maxCorrection = 0;
-    for (const loop of loops) {
+    for (const loop of freeLoops) {
       let numerator = 0;
       let denominator = 0;
-      for (const { branch, dir } of loop) {
+      for (const { branch, dir } of loop.members) {
         const b = branches[branch];
         const q = Q[branch];
         const headLoss =
@@ -275,7 +333,7 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
         denominator = denominator < 0 ? -DENOM_FLOOR : DENOM_FLOOR;
       }
       const deltaQ = -numerator / denominator;
-      for (const { branch, dir } of loop) {
+      for (const { branch, dir } of loop.members) {
         Q[branch] += dir * deltaQ;
       }
       maxCorrection = Math.max(maxCorrection, Math.abs(deltaQ));
@@ -287,12 +345,31 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
     }
   }
 
+  // --- Controller pressure for each fixed-flow branch: the pressure its flow
+  //     controller must add (from->to) so KVL closes around its frozen loop.
+  const fixedFlowPressure: Record<string, number> = {};
+  for (const loop of loops) {
+    if (!loop.frozen) continue;
+    let sum = 0;
+    for (const { branch, dir } of loop.members) {
+      const b = branches[branch];
+      const q = Q[branch];
+      sum +=
+        dir *
+        (pressureDrop(b.R, q, b.n) -
+          (b.fan ? fanPressure(b.fan, q) : 0) -
+          b.pressureSource -
+          b.nvpSource);
+    }
+    fixedFlowPressure[branches[loop.chord].airwayId] = sum;
+  }
+
   // --- Assemble results (real airways only).
   const flows: Record<string, number> = {};
   const airwayResults: AirwayResult[] = [];
   for (let i = 0; i < realBranchCount; i++) {
     const b = branches[i];
-    const q = Q[i];
+    const q = Q[i]; // 0 for blocked branches (they ride no loop), held value for fixed-flow
     flows[b.airwayId] = q;
     airwayResults.push({
       airwayId: b.airwayId,
@@ -302,6 +379,9 @@ export function solveNetwork(network: VentNetwork, options: SolveOptions = {}): 
       pressureDrop: pressureDrop(b.R, q, b.n),
       fanPressure: b.fan ? fanPressure(b.fan, q) : 0,
       fanState: b.fan ? fanState(b.fan, q) : undefined,
+      blocked: b.blocked || undefined,
+      fixedFlow: b.fixedFlow !== null || undefined,
+      fixedFlowPressure: b.fixedFlow !== null ? fixedFlowPressure[b.airwayId] : undefined,
     });
   }
 

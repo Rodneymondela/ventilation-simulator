@@ -127,6 +127,18 @@ export interface Airway {
    * is skipped for this airway. NVP is unaffected by this flag.
    */
   densityAdjusted?: boolean;
+  /**
+   * Sealed/blocked airway: carries no air. The solver excludes it from the
+   * network entirely and reports Q = 0. Blocking overrides any fixed flow.
+   */
+  blocked?: boolean;
+  /**
+   * Fixed-quantity airway: a flow controller (booster/regulator) holds the flow
+   * in the from->to direction at this value, m^3/s. The solver reports the
+   * controller pressure required. Requires the airway to sit in a surrounding
+   * circuit (it cannot be the only path between its nodes).
+   */
+  fixedFlow?: number | null;
 }
 
 export interface VentNetwork {

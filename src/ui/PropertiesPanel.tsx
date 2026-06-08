@@ -271,6 +271,38 @@ function AirwayEditor({ airway }: { airway: Airway }) {
 
       <div className="mt-1 space-y-1 border-t border-slate-100 pt-2">
         <label className="flex items-center justify-between gap-2 text-sm">
+          <span className="text-slate-600">Blocked (sealed)</span>
+          <input
+            type="checkbox"
+            checked={airway.blocked ?? false}
+            onChange={(e) => updateAirway(airway.id, { blocked: e.target.checked || undefined })}
+          />
+        </label>
+        <label className="flex items-center justify-between gap-2 text-sm">
+          <span className="text-slate-600">Fixed airflow</span>
+          <input
+            type="checkbox"
+            disabled={airway.blocked}
+            checked={airway.fixedFlow != null}
+            onChange={(e) => updateAirway(airway.id, { fixedFlow: e.target.checked ? 10 : null })}
+          />
+        </label>
+        {airway.fixedFlow != null && !airway.blocked && (
+          <Field
+            label="Set flow Q"
+            value={airway.fixedFlow}
+            onChange={(v) => updateAirway(airway.id, { fixedFlow: v })}
+            suffix="m³/s"
+          />
+        )}
+        <p className="text-[11px] text-slate-400">
+          A fixed-flow controller needs a surrounding circuit; the solve reports the booster /
+          regulator pressure it requires. Blocking overrides a fixed flow.
+        </p>
+      </div>
+
+      <div className="mt-1 space-y-1 border-t border-slate-100 pt-2">
+        <label className="flex items-center justify-between gap-2 text-sm">
           <span className="text-slate-600">Override air density</span>
           <input
             type="checkbox"
@@ -325,6 +357,14 @@ function AirwayEditor({ airway }: { airway: Airway }) {
               <div className="flex justify-between">
                 <span className="text-slate-500">Fan pressure</span>
                 <span className="font-mono">{res.fanPressure.toFixed(2)} Pa</span>
+              </div>
+            )}
+            {res.fixedFlow && res.fixedFlowPressure != null && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">
+                  Controller ({res.fixedFlowPressure >= 0 ? 'booster' : 'regulator'})
+                </span>
+                <span className="font-mono">{res.fixedFlowPressure.toFixed(2)} Pa</span>
               </div>
             )}
             {res.fanState && (
