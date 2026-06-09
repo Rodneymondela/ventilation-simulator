@@ -1,0 +1,62 @@
+name: Bug report
+description: Report something that isn't working correctly
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please include enough detail to reproduce it.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, including what you expected to happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where did it happen?
+      options:
+        - 2D editor
+        - 3D view
+        - Solver / results
+        - Import / export (JSON / CSV)
+        - Other / not sure
+    validations:
+      required: false
+  - type: textarea
+    id: model
+    attributes:
+      label: Model (optional)
+      description: "If it's network-specific, paste the model JSON (File → Save model) or attach the file."
+      render: json
+  - type: textarea
+    id: console
+    attributes:
+      label: Console errors (optional)
+      description: Any errors from the browser developer console.
+      render: shell
+  - type: input
+    id: env
+    attributes:
+      label: Browser / OS
+      placeholder: e.g. Chrome 126 on Windows 11
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this isn't a duplicate
+          required: true
