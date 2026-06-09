@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/Rodneymondela/ventilation-simulator/actions/workflows/ci.yml/badge.svg)](https://github.com/Rodneymondela/ventilation-simulator/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Branch protection: master](https://img.shields.io/badge/branch%20protection-master%20%C2%B7%20CI%20required-blue)](https://github.com/Rodneymondela/ventilation-simulator/settings/branches)
 
 An interactive mine ventilation network simulator (web app), inspired by desktop
 tools like Ventsim DESIGN. Build a network of nodes and airways, assign airway
