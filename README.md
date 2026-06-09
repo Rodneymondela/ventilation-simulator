@@ -9,6 +9,11 @@ tools like Ventsim DESIGN. Build a network of nodes and airways, assign airway
 and fan properties, run a steady-state solve, and visualise airflow, velocity and
 pressure.
 
+![The 2D editor showing the demo network after a solve, with airways colour-coded by airflow, a legend, and the per-airway results table.](./docs/screenshot-2d.png)
+
+*The 2D editor after a solve: airways colour-coded by airflow, with the legend
+and per-airway results (R, Q, velocity, Δp, fan state).*
+
 > **Honesty / accuracy note.** The equation *forms* used here (Atkinson
 > `R = kOL/A³`, square law `p = RQ²`, Hardy Cross) are standard mine-ventilation
 > fundamentals. The empirical constants — Atkinson friction factor `k` and air
