@@ -166,6 +166,11 @@ Requires Node >= 20.17. Vite/Vitest/TypeScript are pinned (Vite 6 / Vitest 2 /
 TS 5.6) for compatibility with Node 20.17 — newer Vite (rolldown) needs Node
 ≥ 20.19, so don't bump those without upgrading Node first.
 
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup, the PR/CI workflow, the
+project layout, and the accuracy ("honesty") rule for the physics constants.
+
 ## License
 
 [MIT](./LICENSE) © 2026 Rodney Mondela.
