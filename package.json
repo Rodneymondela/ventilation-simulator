@@ -13,6 +13,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "dxf-parser": "^1.1.2",
     "psychrolib": "^1.1.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
