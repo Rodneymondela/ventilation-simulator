@@ -81,6 +81,14 @@ export interface AirwayResult {
    * arbitrary units. Populated only when a contaminant solve has run.
    */
   concentration?: number;
+  /**
+   * Outlet (downstream-end) air state from the thermodynamic march, populated
+   * only when a heat solve has run. Used for the heat display layers.
+   */
+  dryBulb?: number; // °C
+  wetBulb?: number; // °C
+  relHum?: number; // 0–1 fraction
+  sigmaHeat?: number; // J/kg dry air
 }
 
 export interface SolveResult {

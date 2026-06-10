@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { VentNetwork, VentNode, Airway, Fan, Stage, SimSettings } from '../model/types';
 import { stageView, inStage, MAX_STAGES, DEFAULT_SIM_SETTINGS } from '../model/types';
 import { createDemoNetwork } from '../model/demoNetwork';
-import { solveNetwork, solveContaminant, type SolveResult } from '../solver';
+import { solveNetwork, solveContaminant, solveHeat, type SolveResult, type HeatResult } from '../solver';
 import { formatValue, type DisplaySetting } from '../display/variables';
 import { DEFAULT_GLYPHS, type GlyphKind } from '../display/glyphs';
 
@@ -55,6 +55,10 @@ interface AppState {
   solveError: string | null;
   /** Whether the last solve's contaminant transport converged (null = not run). */
   contaminantConverged: boolean | null;
+  /** Result of the thermodynamic (heat) march, or null if not run. */
+  heatResult: HeatResult | null;
+  /** Whether the last heat march converged (null = not run). */
+  heatConverged: boolean | null;
   display: DisplayState;
   simSettings: SimSettings;
   /** Which status-glyph layers are visible on the canvas. */
@@ -262,6 +266,8 @@ export const useNetworkStore = create<AppState>((set, get) => {
     resultStale: true,
     solveError: null,
     contaminantConverged: null,
+    heatResult: null,
+    heatConverged: null,
     past: [],
     future: [],
 
@@ -422,7 +428,36 @@ export const useNetworkStore = create<AppState>((set, get) => {
             concentration: c.airwayConcentration[r.airwayId] ?? 0,
           }));
         }
-        set({ result, resultStale: false, solveError: null, contaminantConverged, selectedAirways: [] });
+
+        // Thermodynamic march: runs on the solved airflow, merging each airway's
+        // outlet air state onto its result so the heat display layers can read it.
+        let heatResult: HeatResult | null = null;
+        let heatConverged: boolean | null = null;
+        if (s.simulateHeat) {
+          heatResult = solveHeat(net, result.flows, {
+            intakeDryBulb: s.intakeDryBulb,
+            intakeWetBulb: s.intakeWetBulb,
+            pressure: s.barometricPressure,
+            gravity: s.gravity,
+            airDensity: s.airDensity,
+          });
+          heatConverged = heatResult.converged;
+          result.airwayResults = result.airwayResults.map((r) => {
+            const out = heatResult!.airwayStates[r.airwayId]?.outlet;
+            return out
+              ? { ...r, dryBulb: out.dryBulb, wetBulb: out.wetBulb, relHum: out.relHum, sigmaHeat: out.sigmaHeat }
+              : r;
+          });
+        }
+        set({
+          result,
+          resultStale: false,
+          solveError: null,
+          contaminantConverged,
+          heatResult,
+          heatConverged,
+          selectedAirways: [],
+        });
       } catch (err) {
         set({ solveError: err instanceof Error ? err.message : String(err), result: null });
       }

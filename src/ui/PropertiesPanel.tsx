@@ -273,6 +273,13 @@ function AirwayEditor({ airway }: { airway: Airway }) {
         onChange={(v) => updateAirway(airway.id, { flowExponent: v })}
         suffix="2=turb · 1=lam"
       />
+      <Field
+        label="Sensible heat"
+        value={airway.sensibleHeat ?? 0}
+        step={100}
+        onChange={(v) => updateAirway(airway.id, { sensibleHeat: v || undefined })}
+        suffix="W (heat sim)"
+      />
       <p className="text-[11px] text-amber-600">* k is a placeholder — verify against a primary source.</p>
       <p className="text-[11px] text-slate-400">
         n is the Atkinson exponent in p = R·Qⁿ (clamped 1–2): 2 = turbulent, ~1 = laminar.

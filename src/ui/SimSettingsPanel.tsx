@@ -107,6 +107,48 @@ export function SimSettingsPanel() {
             onChange={(v) => set({ maxIterations: Math.max(1, Math.round(v)) })}
           />
 
+          <div className="pt-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Thermodynamic (heat) sim
+          </div>
+          <label className="flex items-center justify-between gap-2">
+            <span className="text-slate-600">Simulate heat after solve</span>
+            <input
+              type="checkbox"
+              checked={simSettings.simulateHeat}
+              onChange={(e) => set({ simulateHeat: e.target.checked })}
+            />
+          </label>
+          {simSettings.simulateHeat && (
+            <>
+              <NumberRow
+                label="Intake dry-bulb"
+                value={simSettings.intakeDryBulb}
+                step={0.5}
+                onChange={(v) => set({ intakeDryBulb: v })}
+                suffix="°C"
+              />
+              <NumberRow
+                label="Intake wet-bulb"
+                value={simSettings.intakeWetBulb}
+                step={0.5}
+                onChange={(v) => set({ intakeWetBulb: v })}
+                suffix="°C"
+              />
+              <NumberRow
+                label="Barometric pressure"
+                value={simSettings.barometricPressure}
+                step={100}
+                onChange={(v) => set({ barometricPressure: v })}
+                suffix="Pa"
+              />
+              <p className="text-[11px] text-amber-600">
+                Heat sim models autocompression + per-airway sensible heat only (via PsychroLib /
+                ASHRAE). Latent/evaporative, diesel and rock-conduction heat are not modelled yet —
+                see CLAUDE.md. Treat results as provisional.
+              </p>
+            </>
+          )}
+
           <p className="text-[11px] text-amber-600">
             * Density defaults follow the Ventsim 1.2 kg/m³ convention — verify against a primary
             source. NVP only drives flow when intake/return air densities differ.

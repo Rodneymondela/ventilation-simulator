@@ -8,7 +8,16 @@ import type { AirwayResult } from '../solver';
  * and a number of decimals for labels.
  */
 
-export type DisplayVariableId = 'airflow' | 'velocity' | 'pressure' | 'resistance' | 'contaminant';
+export type DisplayVariableId =
+  | 'airflow'
+  | 'velocity'
+  | 'pressure'
+  | 'resistance'
+  | 'contaminant'
+  | 'dryBulb'
+  | 'wetBulb'
+  | 'relHum'
+  | 'sigmaHeat';
 
 export interface UnitDef {
   id: string;
@@ -76,6 +85,39 @@ export const DISPLAY_VARIABLES: Record<DisplayVariableId, DisplayVariableDef> = 
     siValue: (r) => r.concentration ?? 0,
     useMagnitude: false,
     units: [{ id: 'rel', label: 'units', factor: 1, decimals: 2 }],
+  },
+  // Heat layers (populated only after a thermodynamic march): the airway's
+  // outlet air state. See solver/heat.ts and solver/psychrometrics.ts.
+  dryBulb: {
+    id: 'dryBulb',
+    label: 'Dry-bulb temp',
+    siValue: (r) => r.dryBulb ?? 0,
+    useMagnitude: false,
+    units: [{ id: 'c', label: '°C', factor: 1, decimals: 1 }],
+  },
+  wetBulb: {
+    id: 'wetBulb',
+    label: 'Wet-bulb temp',
+    siValue: (r) => r.wetBulb ?? 0,
+    useMagnitude: false,
+    units: [{ id: 'c', label: '°C', factor: 1, decimals: 1 }],
+  },
+  relHum: {
+    id: 'relHum',
+    label: 'Relative humidity',
+    siValue: (r) => r.relHum ?? 0,
+    useMagnitude: false,
+    units: [{ id: 'pct', label: '%', factor: 100, decimals: 1 }],
+  },
+  sigmaHeat: {
+    id: 'sigmaHeat',
+    label: 'Sigma heat',
+    siValue: (r) => r.sigmaHeat ?? 0,
+    useMagnitude: false,
+    units: [
+      { id: 'kjkg', label: 'kJ/kg', factor: 0.001, decimals: 2 },
+      { id: 'jkg', label: 'J/kg', factor: 1, decimals: 0 },
+    ],
   },
 };
 

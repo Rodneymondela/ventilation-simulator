@@ -8,6 +8,7 @@ export function ResultsTable() {
     solveError,
     resultStale,
     contaminantConverged,
+    heatConverged,
     setSelection,
     selection,
     selectedAirways,
@@ -17,12 +18,14 @@ export function ResultsTable() {
       solveError: s.solveError,
       resultStale: s.resultStale,
       contaminantConverged: s.contaminantConverged,
+      heatConverged: s.heatConverged,
       setSelection: s.setSelection,
       selection: s.selection,
       selectedAirways: s.selectedAirways,
     })),
   );
   const group = new Set(selectedAirways);
+  const hasHeat = !!result?.airwayResults.some((r) => r.dryBulb != null);
 
   return (
     <div className="flex h-full flex-col">
@@ -40,6 +43,10 @@ export function ResultsTable() {
           <span className="text-amber-600">contaminant: no steady state (needs a sink/fresh node)</span>
         )}
         {contaminantConverged === true && <span className="text-emerald-600">contaminant solved</span>}
+        {heatConverged === true && <span className="text-emerald-600">heat solved</span>}
+        {heatConverged === false && (
+          <span className="text-amber-600">heat: no steady state (closed loop + net heat?)</span>
+        )}
         {resultStale && result && <span className="text-amber-600">(network changed since solve)</span>}
         {solveError && <span className="text-red-600">error: {solveError}</span>}
       </div>
@@ -55,6 +62,13 @@ export function ResultsTable() {
               <th className="px-3 py-1 text-right font-medium">Fan (Pa)</th>
               <th className="px-3 py-1 text-left font-medium">Fan state</th>
               <th className="px-3 py-1 text-left font-medium">Status</th>
+              {hasHeat && (
+                <>
+                  <th className="px-3 py-1 text-right font-medium">DB out (°C)</th>
+                  <th className="px-3 py-1 text-right font-medium">WB out (°C)</th>
+                  <th className="px-3 py-1 text-right font-medium">RH (%)</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -100,6 +114,19 @@ export function ResultsTable() {
                     )}
                     {!r.blocked && !r.fixedFlow && <span className="text-slate-300">—</span>}
                   </td>
+                  {hasHeat && (
+                    <>
+                      <td className="px-3 py-1 text-right font-mono">
+                        {r.dryBulb != null ? r.dryBulb.toFixed(1) : '—'}
+                      </td>
+                      <td className="px-3 py-1 text-right font-mono">
+                        {r.wetBulb != null ? r.wetBulb.toFixed(1) : '—'}
+                      </td>
+                      <td className="px-3 py-1 text-right font-mono">
+                        {r.relHum != null ? (r.relHum * 100).toFixed(1) : '—'}
+                      </td>
+                    </>
+                  )}
                 </tr>
               );
             })}

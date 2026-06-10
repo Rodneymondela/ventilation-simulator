@@ -187,6 +187,19 @@ export interface SimSettings {
   tolerance: number;
   /** Maximum solver iterations. */
   maxIterations: number;
+
+  /**
+   * Run the thermodynamic (heat + moisture) march after the airflow solve. Off by
+   * default — like Ventsim's separate "Sim Heat". Only autocompression and user
+   * sensible heat are modelled so far (see solver/heat.ts).
+   */
+  simulateHeat: boolean;
+  /** Intake (surface) dry-bulb temperature, °C — boundary air entering the network. */
+  intakeDryBulb: number;
+  /** Intake (surface) wet-bulb temperature, °C. */
+  intakeWetBulb: number;
+  /** Barometric pressure used for psychrometrics, Pa (constant for now). */
+  barometricPressure: number;
 }
 
 export const DEFAULT_SIM_SETTINGS: SimSettings = {
@@ -196,6 +209,10 @@ export const DEFAULT_SIM_SETTINGS: SimSettings = {
   gravity: 9.81,
   tolerance: 1e-6,
   maxIterations: 1000,
+  simulateHeat: false,
+  intakeDryBulb: 15, // PLACEHOLDER intake conditions — set to your site's surface air
+  intakeWetBulb: 12,
+  barometricPressure: 101325, // standard sea-level; set to your site's barometric pressure
 };
 
 /**
