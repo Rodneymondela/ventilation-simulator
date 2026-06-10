@@ -25,8 +25,9 @@ WORKING METHOD (Claude Code specifics)
 - Build in this order; do not advance until the current stage runs:
   (1) data model + resistance maths, (2) network solver + unit tests,
   (3) minimal UI wired to the solver, (4) display layers + units,
-  (5) staging + export, (6) thermodynamic/psychrometric simulation
-  (depends on a working airflow solve), (7) optional contaminant layer.
+  (5) staging + export, (6) DXF import (centrelines -> airways + reference
+  graphics), (7) thermodynamic/psychrometric simulation (depends on a working
+  airflow solve), (8) optional contaminant layer.
 - Run the test suite yourself after each stage and report pass/fail. Never claim
   something works without executing it.
 - Commit logically between stages if a git repo is present.
@@ -127,13 +128,61 @@ STAGING (Ventsim staging model)
 UI / LAYOUT (familiar but original)
 - Top menu bar: File, Edit, View, Run, Tools, Settings, Help.
 - Toolbar: new/open/save, undo/redo, add node, add airway, add fan, add
-  resistance/regulator, run solve, select/pan/zoom.
+  resistance/regulator, import DXF, run solve, select/pan/zoom.
 - Stage selector in the header.
 - Main canvas: 2D network editor minimum; depth-aware 3D optional.
 - Properties panel for the selected node/airway/fan.
 - Results table per airway: R, Q, velocity, pressure drop, fan state, and (after
   heat sim) inlet/outlet dry-bulb, wet-bulb, RH, sigma heat, and total heat
   addition.
+
+DXF IMPORT (mine layout / centrelines -> network)
+A primary way real models are seeded: import a DXF (AutoCAD Drawing Exchange
+Format) of mine development and turn centrelines into airways. Scope DXF as the
+target format — it is an openly documented spec. Do NOT promise DWG, DGN, Surpac
+STR, or Datamine DM unless the library you choose genuinely supports them; if it
+does, treat them as bonus and say so. Do not hand-roll a DXF parser from memory —
+use a maintained DXF-parsing library and cite it in the README.
+
+Parse and expose:
+- LAYERS: list all layers in the file; let the user choose which to import
+  (mine layouts routinely carry many layers — survey, services, geology — and
+  only some are airway centrelines).
+- CENTRELINES (LINE / POLYLINE / LWPOLYLINE entities): the airway geometry.
+- TEXT entities: optional import as labels.
+- SOLIDS / 3DFACE / wireframes: optional import as non-airway reference geometry
+  only (these are visual context, never converted to airways automatically).
+
+Import options to provide (mirroring the Ventsim import form):
+- Import centrelines as AIRWAYS, or as REFERENCE-ONLY graphics. Reference-only
+  lines do not affect the model but can later be converted to airways by
+  selecting/fencing them (an "Add > Convert" style action). Default to
+  reference-only so an import cannot silently corrupt an existing network.
+- Merge into the current model vs. replace.
+- Units: Metric / Imperial override (DXF files usually do not state their units;
+  default to the model's units and warn on suspected mismatch).
+- Offset X / Y / Z and uniform Scale, to align the import to model coordinates.
+- "Flatten to 2D" option to collapse all geometry onto one elevation.
+- Default airway attributes (area, perimeter, k, air type) applied to newly
+  created airways, editable before import.
+
+Centreline -> network conversion (the hard part — get this right and test it):
+- Build nodes at centreline endpoints and shared/coincident points. Snap
+  endpoints within a user-set tolerance so that lines meant to meet share one
+  node (otherwise the network is disconnected and will not solve).
+- Polylines become chains of airways through intermediate vertices (or a single
+  airway with length = polyline length — make this a choice).
+- Do NOT auto-split airways that merely cross in 2D but are at different
+  elevations or were not drawn as connected — only join where endpoints
+  coincide within tolerance. Report how many nodes/airways were created and how
+  many endpoints were snapped, so the user can sanity-check connectivity.
+
+MANDATORY DXF TEST
+Use a small hand-made DXF with a few connected polylines (e.g. a loop plus a
+spur) and assert: correct airway count, correct node count after snapping,
+endpoints within tolerance merged to one node, and the resulting graph is
+connected and solvable. Include an "intentionally crossing but unconnected"
+pair to confirm it is NOT auto-joined.
 
 THERMODYNAMIC / PSYCHROMETRIC SIMULATION (heat + moisture; depends on airflow)
 This is a coupled heat-and-mass-balance subsystem, NOT a chart lookup. Build it
@@ -215,10 +264,14 @@ ACCEPTANCE CRITERIA (verify each by running, not by assertion)
 4. I can switch primary/secondary layers and units and see the network recolour.
 5. I can create at least two stages with one shared airway, edit the shared
    airway, and confirm the edit appears in both stages.
-6. The psychrometric core matches the cited reference points in its unit test,
+6. I can import a small DXF, choose which layers become airways vs reference,
+   and get a connected, solvable network with a reported count of nodes/airways
+   created and endpoints snapped; intentionally crossing-but-unconnected lines
+   are not auto-joined.
+7. The psychrometric core matches the cited reference points in its unit test,
    and after a heat sim I can see wet-bulb and dry-bulb rise with depth along a
    declining airway and can colour the network by wet-bulb temperature.
-7. I can save, reload, and export the model and results.
+8. I can save, reload, and export the model and results.
 ```
 
 ---
@@ -240,6 +293,13 @@ ACCEPTANCE CRITERIA (verify each by running, not by assertion)
   cites) or another primary source.
 - The prompt deliberately tells Claude to draw its own simple icons and avoid
   reproducing Howden's UI/artwork, to keep this an independent tool.
+- DXF import is specified from the manual's verified import behaviour (layer
+  selection, centrelines-to-airways vs reference-only, endpoint snapping, units/
+  offset/scale, solids as reference only). The prompt tells Claude Code to use a
+  maintained DXF library rather than hand-rolling a parser, to default to
+  reference-only so imports cannot silently corrupt a network, and to test
+  connectivity/snapping on a hand-made DXF. DWG/DGN/Surpac/Datamine are not
+  promised unless the chosen library actually supports them.
 - Thermodynamic/psychrometric simulation is specified using the manual's verified
   heat data model (wet-bulb, dry-bulb, sigma heat, RH, VRT, sensible/latent heat,
   condensate, autocompression, evaporative cooling). I did NOT write any

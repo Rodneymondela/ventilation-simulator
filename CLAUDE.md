@@ -37,8 +37,9 @@ before starting work.
 3. Minimal UI wired to the solver
 4. Display layers (primary/secondary) + units
 5. Staging + export
-6. Thermodynamic/psychrometric simulation  ← gate: psychrometric test passes
-7. Optional contaminant layer
+6. DXF import (centrelines -> airways + reference graphics)  ← gate: connectivity/snapping test passes
+7. Thermodynamic/psychrometric simulation  ← gate: psychrometric test passes
+8. Optional contaminant layer
 
 ### 4. Keep concerns separated
 - The solver(s) live in their own framework-independent, unit-tested module(s).
@@ -49,6 +50,15 @@ before starting work.
   Howden's artwork, exact UI, or any proprietary algorithm. The Ventsim internal
   solver is not published — our solver (Hardy Cross baseline) is our own choice and
   must not be described as "what Ventsim does."
+
+### 6. DXF import must not silently corrupt the network
+- Use a maintained DXF-parsing library (cite it); do not hand-roll a parser.
+- Default centreline import to REFERENCE-ONLY; converting to airways is an
+  explicit user action. Snap coincident endpoints within a user-set tolerance,
+  and never auto-join lines that merely cross in 2D. Always report counts of
+  nodes/airways created and endpoints snapped so connectivity can be checked.
+- Only claim DWG/DGN/Surpac/Datamine support if the chosen library truly provides
+  it. DXF is the committed format.
 
 ## Core physics reference (forms only — source the constants)
 - Atkinson resistance:  R = (k * O * L) / A^3
