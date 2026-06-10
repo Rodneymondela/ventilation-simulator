@@ -32,6 +32,10 @@ import {
   GetRelHumFromTWetBulb,
   GetHumRatioFromTWetBulb,
   GetTDewPointFromTWetBulb,
+  GetTDryBulbFromEnthalpyAndHumRatio,
+  GetTWetBulbFromHumRatio,
+  GetRelHumFromHumRatio,
+  GetTDewPointFromHumRatio,
 } from 'psychrolib';
 
 // PsychroLib is a singleton; fix it to SI units once at module load.
@@ -94,5 +98,31 @@ export function airStateFromBulbs(
     enthalpy: GetMoistAirEnthalpy(dryBulb, humidityRatio),
     sigmaHeat: GetSatAirEnthalpy(twb, pressure),
     dewPoint: GetTDewPointFromTWetBulb(dryBulb, twb, pressure),
+  };
+}
+
+/**
+ * Full air state from moist-air enthalpy (J/kg dry air), moisture content
+ * (humidity ratio, kg/kg) and barometric pressure. This is the inverse used by
+ * the heat march: enthalpy and moisture are the conserved quantities transported
+ * along airways and mixed at junctions; the temperatures are recovered from them.
+ */
+export function airStateFromEnthalpy(
+  enthalpy: number,
+  humidityRatio: number,
+  pressure = STANDARD_PRESSURE,
+): AirState {
+  const w = Math.max(humidityRatio, 0);
+  const dryBulb = GetTDryBulbFromEnthalpyAndHumRatio(enthalpy, w);
+  const wetBulb = GetTWetBulbFromHumRatio(dryBulb, w, pressure);
+  return {
+    dryBulb,
+    wetBulb,
+    pressure,
+    relHum: GetRelHumFromHumRatio(dryBulb, w, pressure),
+    humidityRatio: w,
+    enthalpy,
+    sigmaHeat: GetSatAirEnthalpy(wetBulb, pressure),
+    dewPoint: GetTDewPointFromHumRatio(dryBulb, w, pressure),
   };
 }

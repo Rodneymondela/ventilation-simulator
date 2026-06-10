@@ -25,4 +25,9 @@ declare module 'psychrolib' {
   export function GetTWetBulbFromRelHum(TDryBulb: number, RelHum: number, Pressure: number): number;
   export function GetTDewPointFromTWetBulb(TDryBulb: number, TWetBulb: number, Pressure: number): number;
   export function GetRelHumFromHumRatio(TDryBulb: number, HumRatio: number, Pressure: number): number;
+
+  /** Dry-bulb (°C) from moist-air enthalpy (J/kg dry air) and humidity ratio (kg/kg). */
+  export function GetTDryBulbFromEnthalpyAndHumRatio(MoistAirEnthalpy: number, HumRatio: number): number;
+  export function GetTWetBulbFromHumRatio(TDryBulb: number, HumRatio: number, Pressure: number): number;
+  export function GetTDewPointFromHumRatio(TDryBulb: number, HumRatio: number, Pressure: number): number;
 }

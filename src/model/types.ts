@@ -139,6 +139,14 @@ export interface Airway {
    * circuit (it cannot be the only path between its nodes).
    */
   fixedFlow?: number | null;
+  /**
+   * User sensible-heat addition along this airway, in watts (W). Positive heats
+   * the air (e.g. machinery, strata); negative cools it (e.g. a heat exchanger).
+   * Applied as an enthalpy rise of (W / mass-flow) in the thermodynamic march.
+   * Latent/evaporative, diesel and rock-conduction heat are NOT modelled yet —
+   * they need source-verified relations (see CLAUDE.md) and are future work.
+   */
+  sensibleHeat?: number | null;
 }
 
 export interface VentNetwork {
