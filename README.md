@@ -98,6 +98,14 @@ The whole suite (38 tests) passes; `npm run build` is clean.
   without touching it.
 - Three.js is split into its own async vendor chunk and dynamically imported by
   the 3D view, so it stays out of the initial bundle.
+- Psychrometrics (for the thermodynamic simulation) come from
+  **[PsychroLib](https://github.com/psychrometrics/psychrolib)** — a peer-reviewed,
+  MIT-licensed library implementing the ASHRAE 2017 Handbook of Fundamentals
+  (Ch. 1) formulations. Per the project's honesty rule, no psychrometric maths is
+  written from memory; see `src/solver/psychrometrics.ts`.
+  > D. Meyer & L. Thevenard (2019). *PsychroLib: a library of psychrometric
+  > functions to calculate thermodynamic properties of air.* Journal of Open
+  > Source Software, 4(33), 1137.
 
 ## Physics
 
