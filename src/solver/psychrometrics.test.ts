@@ -1,15 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import {
-  SI,
-  SetUnitSystem,
-  GetSatAirEnthalpy,
-  GetMoistAirEnthalpy,
-  GetSatHumRatio,
-  GetTWetBulbFromRelHum,
-} from 'psychrolib';
+import psychrolib from 'psychrolib';
 import { airStateFromBulbs, saturationVapourPressure, STANDARD_PRESSURE } from './psychrometrics';
 
-SetUnitSystem(SI);
+psychrolib.SetUnitSystem(psychrolib.SI);
 
 /**
  * MANDATORY psychrometric core test (CLAUDE.md rule #2 / spec). Validates the
@@ -42,8 +35,8 @@ describe('psychrometric core (PsychroLib / ASHRAE 2017)', () => {
     // at saturation (Tdb = Twb = T) that must equal the moist-air enthalpy of the
     // saturated air at T.
     const T = 20;
-    const sigma = GetSatAirEnthalpy(T, STANDARD_PRESSURE);
-    const enthalpy = GetMoistAirEnthalpy(T, GetSatHumRatio(T, STANDARD_PRESSURE));
+    const sigma = psychrolib.GetSatAirEnthalpy(T, STANDARD_PRESSURE);
+    const enthalpy = psychrolib.GetMoistAirEnthalpy(T, psychrolib.GetSatHumRatio(T, STANDARD_PRESSURE));
     console.log(`saturated 20°C: sigmaHeat=${sigma.toFixed(1)} J/kg, enthalpy=${enthalpy.toFixed(1)} J/kg`);
     expect(sigma).toBeCloseTo(enthalpy, 0);
   });
@@ -66,7 +59,7 @@ describe('psychrometric core (PsychroLib / ASHRAE 2017)', () => {
     expect(s.wetBulb).toBeLessThanOrEqual(s.dryBulb);
     // Independent cross-check: the wet-bulb recovered from the computed RH must
     // return to the input 22°C (round-trip through a different PsychroLib route).
-    const twbBack = GetTWetBulbFromRelHum(30, s.relHum, STANDARD_PRESSURE);
+    const twbBack = psychrolib.GetTWetBulbFromRelHum(30, s.relHum, STANDARD_PRESSURE);
     console.log(`  round-trip wet-bulb: expected 22.00°C, computed ${twbBack.toFixed(2)}°C`);
     expect(twbBack).toBeCloseTo(22, 1);
   });

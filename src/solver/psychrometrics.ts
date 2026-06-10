@@ -14,7 +14,7 @@
  * "Sigma heat" (S) is the mine-ventilation quantity used by McPherson
  * (*Subsurface Ventilation and Environmental Engineering*): the enthalpy of air
  * SATURATED at the wet-bulb temperature, per kg of dry air. It is computed here
- * as PsychroLib's `GetSatAirEnthalpy(wetBulb, pressure)`.
+ * as PsychroLib's `psychrolib.GetSatAirEnthalpy(wetBulb, pressure)`.
  *
  * VERIFY BEFORE USE: the sigma-heat identity (S = enthalpy of saturated air at
  * t_wb) and all derived climate numbers should be checked against your own
@@ -23,23 +23,12 @@
  * Units (SI): temperatures °C, pressure Pa, enthalpy J/kg dry air, humidity /
  * moisture ratio kg water / kg dry air, relative humidity as a 0–1 fraction.
  */
-import {
-  SI,
-  SetUnitSystem,
-  GetSatVapPres,
-  GetSatAirEnthalpy,
-  GetMoistAirEnthalpy,
-  GetRelHumFromTWetBulb,
-  GetHumRatioFromTWetBulb,
-  GetTDewPointFromTWetBulb,
-  GetTDryBulbFromEnthalpyAndHumRatio,
-  GetTWetBulbFromHumRatio,
-  GetRelHumFromHumRatio,
-  GetTDewPointFromHumRatio,
-} from 'psychrolib';
+// Import the singleton (default) and call methods ON it — PsychroLib uses `this`
+// internally, so detached named imports would break (see psychrolib.d.ts).
+import psychrolib from 'psychrolib';
 
-// PsychroLib is a singleton; fix it to SI units once at module load.
-SetUnitSystem(SI);
+// Fix PsychroLib to SI units once at module load.
+psychrolib.SetUnitSystem(psychrolib.SI);
 
 /** Standard sea-level atmospheric pressure, Pa. Barometric pressure is editable per scenario. */
 export const STANDARD_PRESSURE = 101325;
@@ -66,7 +55,7 @@ export interface AirState {
 
 /** Saturation vapour pressure of water at temperature `t` (°C), in Pa. */
 export function saturationVapourPressure(t: number): number {
-  return GetSatVapPres(t);
+  return psychrolib.GetSatVapPres(t);
 }
 
 /**
@@ -74,7 +63,7 @@ export function saturationVapourPressure(t: number): number {
  * the enthalpy of air saturated at the wet-bulb temperature (McPherson).
  */
 export function sigmaHeat(wetBulb: number, pressure = STANDARD_PRESSURE): number {
-  return GetSatAirEnthalpy(wetBulb, pressure);
+  return psychrolib.GetSatAirEnthalpy(wetBulb, pressure);
 }
 
 /**
@@ -88,16 +77,16 @@ export function airStateFromBulbs(
   pressure = STANDARD_PRESSURE,
 ): AirState {
   const twb = Math.min(wetBulb, dryBulb);
-  const humidityRatio = GetHumRatioFromTWetBulb(dryBulb, twb, pressure);
+  const humidityRatio = psychrolib.GetHumRatioFromTWetBulb(dryBulb, twb, pressure);
   return {
     dryBulb,
     wetBulb: twb,
     pressure,
-    relHum: GetRelHumFromTWetBulb(dryBulb, twb, pressure),
+    relHum: psychrolib.GetRelHumFromTWetBulb(dryBulb, twb, pressure),
     humidityRatio,
-    enthalpy: GetMoistAirEnthalpy(dryBulb, humidityRatio),
-    sigmaHeat: GetSatAirEnthalpy(twb, pressure),
-    dewPoint: GetTDewPointFromTWetBulb(dryBulb, twb, pressure),
+    enthalpy: psychrolib.GetMoistAirEnthalpy(dryBulb, humidityRatio),
+    sigmaHeat: psychrolib.GetSatAirEnthalpy(twb, pressure),
+    dewPoint: psychrolib.GetTDewPointFromTWetBulb(dryBulb, twb, pressure),
   };
 }
 
@@ -113,16 +102,16 @@ export function airStateFromEnthalpy(
   pressure = STANDARD_PRESSURE,
 ): AirState {
   const w = Math.max(humidityRatio, 0);
-  const dryBulb = GetTDryBulbFromEnthalpyAndHumRatio(enthalpy, w);
-  const wetBulb = GetTWetBulbFromHumRatio(dryBulb, w, pressure);
+  const dryBulb = psychrolib.GetTDryBulbFromEnthalpyAndHumRatio(enthalpy, w);
+  const wetBulb = psychrolib.GetTWetBulbFromHumRatio(dryBulb, w, pressure);
   return {
     dryBulb,
     wetBulb,
     pressure,
-    relHum: GetRelHumFromHumRatio(dryBulb, w, pressure),
+    relHum: psychrolib.GetRelHumFromHumRatio(dryBulb, w, pressure),
     humidityRatio: w,
     enthalpy,
-    sigmaHeat: GetSatAirEnthalpy(wetBulb, pressure),
-    dewPoint: GetTDewPointFromHumRatio(dryBulb, w, pressure),
+    sigmaHeat: psychrolib.GetSatAirEnthalpy(wetBulb, pressure),
+    dewPoint: psychrolib.GetTDewPointFromHumRatio(dryBulb, w, pressure),
   };
 }
