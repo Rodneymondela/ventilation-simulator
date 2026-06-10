@@ -42,8 +42,14 @@ spec-gap audit are done:
 - [x] **Per-airway Atkinson flow exponent** *n* (`p = R·|Q|ⁿ⁻¹·Q`, laminar↔turbulent)
 - [x] **Fan operating states** (normal / off / reverse / stalled)
 - [x] **Toggleable status-glyph layers** + **"select same layer"** helper (both 2D and 3D)
+- [x] **Thermodynamic (heat) simulation** — psychrometric core (PsychroLib / ASHRAE),
+      a heat-and-moisture march over the solved airflow with **autocompression** and
+      per-airway **sensible heat**, dry-bulb / wet-bulb / RH / sigma-heat display
+      layers and results columns. *Scope:* latent/evaporative, diesel and
+      rock-strata-conduction heat are **not** modelled yet (they need
+      source-verified relations — see CLAUDE.md) and are future work.
 
-The whole suite (38 tests) passes; `npm run build` is clean.
+The whole suite (45 tests) passes; `npm run build` is clean.
 
 ## Using the app
 
