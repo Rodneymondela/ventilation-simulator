@@ -43,11 +43,11 @@ interface MapInfo {
   scale: number;
 }
 
-/** Map a node (x, y plan; z depth) to three-space (x, depth->Y up, y->Z). */
+/** Map a node (x, y plan; z = depth, positive down) to three-space (x, up->Y, y->Z). */
 function mapNode(n: VentNode, m: MapInfo): Vector3 {
   return new Vector3(
     (n.x - m.cx) * m.scale,
-    (n.z - m.cz) * m.scale, // depth: more negative z => lower
+    (m.cz - n.z) * m.scale, // z is depth (+down): deeper => lower in the scene
     (n.y - m.cy) * m.scale,
   );
 }

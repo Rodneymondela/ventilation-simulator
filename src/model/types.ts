@@ -15,12 +15,18 @@
  * results are trusted for real engineering.
  */
 
-/** A junction in the network. z is depth/elevation (used later for NVP). */
+/** A junction in the network. */
 export interface VentNode {
   id: string;
   label?: string;
   x: number;
   y: number;
+  /**
+   * Depth below the surface datum, in metres, POSITIVE DOWNWARD (surface = 0,
+   * deeper = larger z). This is the convention the solver uses for natural
+   * ventilation pressure and the thermodynamic march (autocompression), and the
+   * 3D view renders larger z lower. Keep all z values on this convention.
+   */
   z: number;
   /**
    * IDs of the stages this node belongs to. Undefined or empty means the node is

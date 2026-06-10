@@ -13,10 +13,11 @@ export function createDemoNetwork(): VentNetwork {
     nodes: [
       // A holds fresh air (contaminant 0); C injects a contaminant (e.g. dust
       // at a working area) so the transport layer shows a gradient on solve.
+      // z = depth below surface, POSITIVE DOWNWARD (see VentNode.z).
       { id: 'A', label: 'A (fan inlet)', x: 120, y: 360, z: 0, contaminantConcentration: 0 },
-      { id: 'B', label: 'B', x: 360, y: 160, z: -50 },
-      { id: 'C', label: 'C (split)', x: 640, y: 160, z: -120, contaminantInjection: 100 },
-      { id: 'D', label: 'D (junction)', x: 640, y: 520, z: -120 },
+      { id: 'B', label: 'B', x: 360, y: 160, z: 50 },
+      { id: 'C', label: 'C (split)', x: 640, y: 160, z: 120, contaminantInjection: 100 },
+      { id: 'D', label: 'D (junction)', x: 640, y: 520, z: 120 },
     ],
     airways: [
       {
