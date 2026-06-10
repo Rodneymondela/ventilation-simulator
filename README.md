@@ -1,5 +1,6 @@
 # Mine Ventilation Network Simulator
 
+[![Status: feature-complete](https://img.shields.io/badge/status-feature--complete-brightgreen)](#status)
 [![CI](https://github.com/Rodneymondela/ventilation-simulator/actions/workflows/ci.yml/badge.svg)](https://github.com/Rodneymondela/ventilation-simulator/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Branch protection: master](https://img.shields.io/badge/branch%20protection-master%20%C2%B7%20CI%20required-blue)](https://github.com/Rodneymondela/ventilation-simulator/settings/branches)
