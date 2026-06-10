@@ -34,6 +34,14 @@ WORKING METHOD (Claude Code specifics)
 - If you hit a genuine decision point or missing requirement, ask rather than
   guess.
 
+STATUS (2026-06-10): all build-order stages DONE.
+  (1)✓ (2)✓ (3)✓ (4)✓ (5)✓ (6)✓ (7)✓ (8)✓
+  Stage (6) DXF import landed in commits 8491cf8 (parser core + mandatory
+  connectivity/snapping test) and dbabefc (import UI: layer selection,
+  reference-only default, merge/replace, snap/scale/offset, live count preview).
+  Uses the maintained `dxf-parser` library (cited in README); 50 tests pass; CI
+  green on master. See README "Status" for the full feature list.
+
 OBJECTIVE
 A user can build a ventilation network (nodes + airways), assign airway and fan
 properties, run a steady-state airflow solve, and visualise airflow, velocity,
