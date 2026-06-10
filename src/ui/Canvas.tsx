@@ -81,6 +81,7 @@ function airwayLabelPlacement(
 export function Canvas() {
   const {
     network,
+    referenceLines,
     tool,
     selection,
     pendingFromNode,
@@ -99,6 +100,7 @@ export function Canvas() {
   } = useNetworkStore(
     useShallow((s) => ({
       network: s.activeNetwork(),
+      referenceLines: s.referenceLines,
       tool: s.tool,
       selection: s.selection,
       pendingFromNode: s.pendingFromNode,
@@ -272,6 +274,20 @@ export function Canvas() {
         </marker>
       </defs>
       <rect x={view.x} y={view.y} width={view.w} height={view.h} fill="url(#grid)" />
+
+      {/* imported DXF reference geometry (view-only, behind the network) */}
+      {referenceLines.map((line, i) =>
+        line.points.length >= 2 ? (
+          <polyline
+            key={`ref${i}`}
+            points={line.points.map((p) => `${p.x},${p.y}`).join(' ')}
+            fill="none"
+            stroke="#cbd5e1"
+            strokeWidth={1.5}
+            style={{ pointerEvents: 'none' }}
+          />
+        ) : null,
+      )}
 
       {/* airways */}
       {network.airways.map((a) => {

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { VentNetwork, VentNode, Airway, Fan, Stage, SimSettings } from '../model/types';
+import type { VentNetwork, VentNode, Airway, Fan, Stage, SimSettings, ReferenceLine } from '../model/types';
 import { stageView, inStage, MAX_STAGES, DEFAULT_SIM_SETTINGS } from '../model/types';
 import { createDemoNetwork } from '../model/demoNetwork';
 import { solveNetwork, solveContaminant, solveHeat, type SolveResult, type HeatResult } from '../solver';
@@ -33,6 +33,7 @@ interface PersistShape {
   display: DisplayState;
   simSettings: SimSettings;
   glyphs: Record<GlyphKind, boolean>;
+  referenceLines: ReferenceLine[];
 }
 
 const STORAGE_KEY = 'ventsim.model.v2';
@@ -63,6 +64,8 @@ interface AppState {
   simSettings: SimSettings;
   /** Which status-glyph layers are visible on the canvas. */
   glyphs: Record<GlyphKind, boolean>;
+  /** Imported DXF reference geometry drawn faintly behind the network (view-only). */
+  referenceLines: ReferenceLine[];
 
   // history (snapshots of the pooled network)
   past: VentNetwork[];
@@ -110,6 +113,14 @@ interface AppState {
   // --- model lifecycle
   newModel: () => void;
   loadModel: (network: VentNetwork, stages?: Stage[], simSettings?: SimSettings) => void;
+
+  // --- DXF import
+  /** Store imported centrelines as view-only reference geometry (merge or replace). */
+  applyDxfReference: (lines: ReferenceLine[], mode: 'merge' | 'replace') => void;
+  /** Add imported airways to the model (merge appends with fresh ids; replace loads fresh). */
+  applyDxfAirways: (net: VentNetwork, mode: 'merge' | 'replace') => void;
+  /** Clear all imported reference geometry. */
+  clearReferenceLines: () => void;
 
   // --- stages
   addStage: () => void;
@@ -163,6 +174,7 @@ function freshModel(network: VentNetwork): PersistShape {
     display: defaultDisplay,
     simSettings: { ...DEFAULT_SIM_SETTINGS },
     glyphs: { ...DEFAULT_GLYPHS },
+    referenceLines: [],
   };
 }
 
@@ -178,6 +190,7 @@ function loadPersisted(): PersistShape | null {
           ...parsed,
           simSettings: { ...DEFAULT_SIM_SETTINGS, ...parsed.simSettings },
           glyphs: { ...DEFAULT_GLYPHS, ...parsed.glyphs },
+          referenceLines: parsed.referenceLines ?? [],
         };
       }
     }
@@ -205,6 +218,7 @@ function loadPersisted(): PersistShape | null {
           display: old.display ?? defaultDisplay,
           simSettings: { ...DEFAULT_SIM_SETTINGS },
           glyphs: { ...DEFAULT_GLYPHS },
+          referenceLines: [],
         };
       }
     }
@@ -518,6 +532,42 @@ export const useNetworkStore = create<AppState>((set, get) => {
       });
     },
 
+    applyDxfReference: (lines, mode) =>
+      set({ referenceLines: mode === 'replace' ? lines : [...get().referenceLines, ...lines] }),
+
+    applyDxfAirways: (net, mode) => {
+      if (mode === 'replace') {
+        get().loadModel(net);
+        return;
+      }
+      // Merge: remap imported ids to fresh unique ones, stamp into the active stage,
+      // and record history so the import can be undone.
+      const { network, activeStageId } = get();
+      const nodeIds = new Set(network.nodes.map((n) => n.id));
+      const airwayIds = new Set(network.airways.map((a) => a.id));
+      const idMap = new Map<string, string>();
+      const newNodes: VentNode[] = net.nodes.map((n) => {
+        const id = uniqueId(nodeIds, 'N');
+        nodeIds.add(id);
+        idMap.set(n.id, id);
+        return { ...n, id, label: n.label === n.id ? id : n.label, stages: [activeStageId] };
+      });
+      const newAirways: Airway[] = net.airways.map((a) => {
+        const id = uniqueId(airwayIds, 'A');
+        airwayIds.add(id);
+        return {
+          ...a,
+          id,
+          from: idMap.get(a.from) ?? a.from,
+          to: idMap.get(a.to) ?? a.to,
+          stages: [activeStageId],
+        };
+      });
+      commit({ nodes: [...network.nodes, ...newNodes], airways: [...network.airways, ...newAirways] });
+    },
+
+    clearReferenceLines: () => set({ referenceLines: [] }),
+
     addStage: () => {
       const { stages } = get();
       if (stages.length >= MAX_STAGES) return;
@@ -635,6 +685,7 @@ useNetworkStore.subscribe((state) => {
     display: state.display,
     simSettings: state.simSettings,
     glyphs: state.glyphs,
+    referenceLines: state.referenceLines,
   };
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));

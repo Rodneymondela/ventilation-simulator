@@ -48,8 +48,13 @@ spec-gap audit are done:
       layers and results columns. *Scope:* latent/evaporative, diesel and
       rock-strata-conduction heat are **not** modelled yet (they need
       source-verified relations — see CLAUDE.md) and are future work.
+- [x] **DXF import** — load mine centrelines from a DXF file (`src/dxf`). Defaults
+      to **reference-only** (faint guide geometry, no airways created); converting
+      to airways is an explicit choice. Coincident endpoints are snapped within a
+      user-set tolerance, and the import reports the count of nodes/airways created
+      and endpoints snapped so connectivity can be checked.
 
-The whole suite (45 tests) passes; `npm run build` is clean.
+The whole suite (50 tests) passes; `npm run build` is clean.
 
 ## Using the app
 
@@ -79,6 +84,12 @@ The whole suite (45 tests) passes; `npm run build` is clean.
   displayed primary/secondary value.
 - **File menu:** New, Open (JSON), Save (JSON), Export network/results (CSV).
   The model also autosaves to `localStorage`.
+- **⬇ DXF** (header): import mine centrelines from a DXF file. Pick which layers
+  to import, then choose **Reference only** (faint guide lines, the default) or
+  **Airways**, and **Merge** (append) or **Replace**. Snap tolerance, scale and
+  X/Y offset transform the geometry on the way in, and a live preview reports how
+  many nodes/airways would be created and how many endpoints would be snapped
+  before you commit. Imported reference geometry can be cleared with **Clear ref**.
 - A starter demo network (5 airways, 1 fan, 1 mesh) loads on first run.
 - **2D / 3D toggle** (header): the 3D view (Three.js) places nodes by depth (z),
   orbit/zoom with the mouse, colours airways by the primary variable, and mirrors
@@ -112,6 +123,11 @@ The whole suite (45 tests) passes; `npm run build` is clean.
   > D. Meyer & L. Thevenard (2019). *PsychroLib: a library of psychrometric
   > functions to calculate thermodynamic properties of air.* Journal of Open
   > Source Software, 4(33), 1137.
+- DXF parsing uses **[dxf-parser](https://github.com/gdsestimating/dxf-parser)**
+  (npm `dxf-parser`, MIT) — a maintained library, not a hand-rolled parser
+  (CLAUDE.md rule #6). It only extracts geometry; the centreline → network logic
+  (snapping/connectivity) lives in the pure, separately-tested `src/dxf/centrelines.ts`.
+  DXF is the committed format — DWG/DGN/Surpac/Datamine are not supported.
 
 ## Physics
 

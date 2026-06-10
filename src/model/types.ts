@@ -161,6 +161,15 @@ export interface VentNetwork {
 }
 
 /**
+ * Imported DXF geometry kept as VIEW-ONLY reference (not part of the solved
+ * network) until the user explicitly converts it to airways. Plan coordinates.
+ */
+export interface ReferenceLine {
+  layer: string;
+  points: { x: number; y: number }[];
+}
+
+/**
  * A named stage (Ventsim staging model): a mine-timeline phase OR an alternative
  * design option. Up to {@link MAX_STAGES} per model. Airways/nodes reference
  * stages by id via their `stages` membership; the network itself is a single
